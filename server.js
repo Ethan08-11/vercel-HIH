@@ -30,11 +30,16 @@ try {
 app.get('/', (req, res) => {
     try {
         const indexPath = path.join(__dirname, 'index.html');
-        res.sendFile(indexPath);
+        res.sendFile(indexPath, { root: __dirname });
     } catch (error) {
         console.error('发送 index.html 时出错:', error);
-        res.status(500).send('无法加载页面');
+        res.status(500).send('无法加载页面: ' + error.message);
     }
+});
+
+// 确保所有静态资源都能正确加载
+app.get('/index.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'), { root: __dirname });
 });
 
 // 检查是否在 Vercel 环境（只读文件系统）
