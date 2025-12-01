@@ -445,8 +445,11 @@ async function initServer() {
 }
 
 // 为 Vercel 导出 handler（无服务器函数格式）
-// 必须在文件末尾导出，确保所有路由都已定义
-module.exports = app;
+// Vercel 需要导出为函数，而不是直接导出 app
+module.exports = (req, res) => {
+    // 处理所有请求
+    return app(req, res);
+};
 
 // 本地开发时启动服务器
 if (require.main === module) {
