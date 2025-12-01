@@ -12,6 +12,11 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('.')); // 提供静态文件服务
 
+// 根路径返回 index.html
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
 // 确保数据目录存在
 const dataDir = path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) {
@@ -212,33 +217,38 @@ app.get('/api/statistics', (req, res) => {
     }
 });
 
-// 启动服务器（监听所有网络接口，允许局域网访问）
-app.listen(PORT, '0.0.0.0', () => {
-    const networkInterfaces = os.networkInterfaces();
-    let localIP = 'localhost';
-    
-    // 获取局域网IP地址
-    for (const interfaceName in networkInterfaces) {
-        const interfaces = networkInterfaces[interfaceName];
-        for (const iface of interfaces) {
-            if (iface.family === 'IPv4' && !iface.internal) {
-                localIP = iface.address;
-                break;
+// 为 Vercel 导出 handler（无服务器函数格式）
+module.exports = app;
+
+// 本地开发时启动服务器
+if (require.main === module) {
+    app.listen(PORT, '0.0.0.0', () => {
+        const networkInterfaces = os.networkInterfaces();
+        let localIP = 'localhost';
+        
+        // 获取局域网IP地址
+        for (const interfaceName in networkInterfaces) {
+            const interfaces = networkInterfaces[interfaceName];
+            for (const iface of interfaces) {
+                if (iface.family === 'IPv4' && !iface.internal) {
+                    localIP = iface.address;
+                    break;
+                }
             }
+            if (localIP !== 'localhost') break;
         }
-        if (localIP !== 'localhost') break;
-    }
-    
-    console.log(`\n服务器运行成功！`);
-    console.log(`本地访问: http://localhost:${PORT}`);
-    console.log(`局域网访问: http://${localIP}:${PORT}`);
-    console.log(`\n在手机/平板上访问: http://${localIP}:${PORT}`);
-    console.log(`\n数据保存目录: ${dataDir}`);
-    console.log(`产品分类目录: ${productsDir}`);
-    console.log('\n可用API:');
-    console.log('  POST /api/submit - 提交问卷');
-    console.log('  GET  /api/submissions - 获取所有提交记录');
-    console.log('  GET  /api/products/:productId - 获取指定产品的提交记录');
-    console.log('  GET  /api/statistics - 获取所有产品的统计信息');
-});
+        
+        console.log(`\n服务器运行成功！`);
+        console.log(`本地访问: http://localhost:${PORT}`);
+        console.log(`局域网访问: http://${localIP}:${PORT}`);
+        console.log(`\n在手机/平板上访问: http://${localIP}:${PORT}`);
+        console.log(`\n数据保存目录: ${dataDir}`);
+        console.log(`产品分类目录: ${productsDir}`);
+        console.log('\n可用API:');
+        console.log('  POST /api/submit - 提交问卷');
+        console.log('  GET  /api/submissions - 获取所有提交记录');
+        console.log('  GET  /api/products/:productId - 获取指定产品的提交记录');
+        console.log('  GET  /api/statistics - 获取所有产品的统计信息');
+    });
+}
 
