@@ -59,6 +59,48 @@
         </div>
     </div>
 
+    <script>
+        // 内联诊断脚本 - 确保即使外部 JS 失败也能显示错误
+        (function() {
+            console.log('HTML 已加载，开始检查资源...');
+            
+            // 检查 script.js 是否加载
+            const scriptTag = document.querySelector('script[src="/script.js"]');
+            if (scriptTag) {
+                scriptTag.onerror = function() {
+                    console.error('script.js 加载失败！');
+                    document.body.innerHTML = '<div style="padding: 20px; text-align: center; color: red;"><h2>错误：script.js 加载失败</h2><p>请检查网络连接或联系管理员</p></div>';
+                };
+                scriptTag.onload = function() {
+                    console.log('script.js 加载成功');
+                };
+            }
+            
+            // 检查 style.css 是否加载
+            const linkTag = document.querySelector('link[href="/style.css"]');
+            if (linkTag) {
+                linkTag.onerror = function() {
+                    console.error('style.css 加载失败！');
+                };
+            }
+            
+            // 延迟检查，确保脚本有时间执行
+            setTimeout(function() {
+                const carouselWrapper = document.getElementById('carouselWrapper');
+                if (carouselWrapper && carouselWrapper.children.length === 0) {
+                    console.warn('警告：carouselWrapper 为空，JavaScript 可能未执行');
+                    // 显示提示
+                    if (!document.querySelector('.loading-message')) {
+                        const msg = document.createElement('div');
+                        msg.className = 'loading-message';
+                        msg.style.cssText = 'padding: 20px; text-align: center; color: #666;';
+                        msg.innerHTML = '<p>正在加载内容...</p><p>如果长时间无响应，请刷新页面</p>';
+                        carouselWrapper.appendChild(msg);
+                    }
+                }
+            }, 2000);
+        })();
+    </script>
     <script src="/script.js"></script>
 </body>
 </html>
