@@ -474,37 +474,49 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // 页面加载完成后初始化
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('页面加载完成，开始初始化问卷');
+function initializeApp() {
+    console.log('开始初始化应用');
+    console.log('当前 URL:', window.location.href);
+    console.log('产品数量:', productImages.length);
+    
     try {
+        const carouselWrapper = document.getElementById('carouselWrapper');
+        if (!carouselWrapper) {
+            console.error('找不到 carouselWrapper 元素');
+            return;
+        }
+        
+        console.log('找到 carouselWrapper，开始初始化问卷');
         initQuestionnaire();
         console.log('问卷初始化成功');
     } catch (error) {
         console.error('问卷初始化失败:', error);
+        console.error('错误堆栈:', error.stack);
         // 显示错误信息
         const container = document.querySelector('.container');
         if (container) {
             container.innerHTML = `
-                <div style="padding: 20px; text-align: center;">
+                <div style="padding: 20px; text-align: center; color: red;">
                     <h2>加载错误</h2>
                     <p>${error.message}</p>
                     <p>请刷新页面重试</p>
+                    <pre>${error.stack}</pre>
                 </div>
             `;
         }
     }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOMContentLoaded 事件触发');
+    initializeApp();
 });
 
 // 如果 DOMContentLoaded 已经触发，直接初始化
 if (document.readyState === 'loading') {
-    // 正在加载，等待 DOMContentLoaded
+    console.log('文档正在加载，等待 DOMContentLoaded');
 } else {
-    // DOM 已经加载完成，直接初始化
-    console.log('DOM 已加载，直接初始化');
-    try {
-        initQuestionnaire();
-    } catch (error) {
-        console.error('初始化失败:', error);
-    }
+    console.log('文档已加载完成，直接初始化');
+    initializeApp();
 }
 
