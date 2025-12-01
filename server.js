@@ -46,11 +46,21 @@ try {
     console.error('静态文件服务配置错误:', error);
 }
 
+// 明确处理静态文件路由
+app.get('/style.css', (req, res) => {
+    console.log('请求 /style.css');
+    res.sendFile('style.css', { root: __dirname });
+});
+
+app.get('/script.js', (req, res) => {
+    console.log('请求 /script.js');
+    res.sendFile('script.js', { root: __dirname });
+});
+
 // 根路径返回 index.html
 app.get('/', (req, res) => {
     try {
-        const indexPath = path.join(__dirname, 'index.html');
-        console.log('请求根路径，发送 index.html:', indexPath);
+        console.log('请求根路径，发送 index.html');
         res.sendFile('index.html', { root: __dirname });
     } catch (error) {
         console.error('发送 index.html 时出错:', error);
