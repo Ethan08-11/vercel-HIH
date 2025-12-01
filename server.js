@@ -61,7 +61,17 @@ app.get('/script.js', (req, res) => {
 app.get('/', (req, res) => {
     try {
         console.log('请求根路径，发送 index.html');
-        res.sendFile('index.html', { root: __dirname });
+        console.log('__dirname:', __dirname);
+        const indexPath = path.join(__dirname, 'index.html');
+        console.log('index.html 路径:', indexPath);
+        res.sendFile('index.html', { root: __dirname }, (err) => {
+            if (err) {
+                console.error('发送 index.html 失败:', err);
+                res.status(500).send('无法加载页面: ' + err.message);
+            } else {
+                console.log('index.html 发送成功');
+            }
+        });
     } catch (error) {
         console.error('发送 index.html 时出错:', error);
         res.status(500).send('无法加载页面: ' + error.message);
@@ -445,11 +455,8 @@ async function initServer() {
 }
 
 // 为 Vercel 导出 handler（无服务器函数格式）
-// Vercel 需要导出为函数，而不是直接导出 app
-module.exports = (req, res) => {
-    // 处理所有请求
-    return app(req, res);
-};
+// @vercel/node 可以直接导出 Express app
+module.exports = app;
 
 // 本地开发时启动服务器
 if (require.main === module) {
