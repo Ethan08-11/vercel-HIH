@@ -19,9 +19,19 @@ app.use(express.json());
 
 // 提供静态文件服务
 try {
-    app.use(express.static(__dirname));
+    app.use(express.static(__dirname, {
+        setHeaders: (res, filePath) => {
+            // 为 HTML 文件设置正确的 Content-Type
+            if (filePath.endsWith('.html')) {
+                res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            }
+        }
+    }));
     // 确保 Picture 目录可访问
     app.use('/Picture', express.static(path.join(__dirname, 'Picture')));
+    
+    console.log('静态文件服务已配置');
+    console.log('根目录:', __dirname);
 } catch (error) {
     console.error('静态文件服务配置错误:', error);
 }

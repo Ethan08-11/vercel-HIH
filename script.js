@@ -473,5 +473,37 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // 页面加载完成后初始化
-document.addEventListener('DOMContentLoaded', initQuestionnaire);
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('页面加载完成，开始初始化问卷');
+    try {
+        initQuestionnaire();
+        console.log('问卷初始化成功');
+    } catch (error) {
+        console.error('问卷初始化失败:', error);
+        // 显示错误信息
+        const container = document.querySelector('.container');
+        if (container) {
+            container.innerHTML = `
+                <div style="padding: 20px; text-align: center;">
+                    <h2>加载错误</h2>
+                    <p>${error.message}</p>
+                    <p>请刷新页面重试</p>
+                </div>
+            `;
+        }
+    }
+});
+
+// 如果 DOMContentLoaded 已经触发，直接初始化
+if (document.readyState === 'loading') {
+    // 正在加载，等待 DOMContentLoaded
+} else {
+    // DOM 已经加载完成，直接初始化
+    console.log('DOM 已加载，直接初始化');
+    try {
+        initQuestionnaire();
+    } catch (error) {
+        console.error('初始化失败:', error);
+    }
+}
 
