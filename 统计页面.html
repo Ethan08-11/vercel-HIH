@@ -178,7 +178,9 @@
             content.style.display = 'none';
             
             try {
-                const response = await fetch('http://localhost:3000/api/statistics');
+                // 使用当前域名作为API地址
+                const API_BASE_URL = window.location.origin;
+                const response = await fetch(`${API_BASE_URL}/api/statistics`);
                 const result = await response.json();
                 
                 if (result.success) {
@@ -190,7 +192,7 @@
                 }
             } catch (error) {
                 console.error('加载统计失败:', error);
-                loading.innerHTML = `❌ 加载失败：${error.message}<br>请确保后端服务器正在运行 (http://localhost:3000)`;
+                loading.innerHTML = `❌ 加载失败：${error.message}<br>请确保后端服务器正在运行`;
             }
         }
 
