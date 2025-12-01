@@ -19,19 +19,29 @@ app.use(express.json());
 
 // 提供静态文件服务
 try {
+    // 静态文件服务（必须在路由之前）
     app.use(express.static(__dirname, {
         setHeaders: (res, filePath) => {
             // 为 HTML 文件设置正确的 Content-Type
             if (filePath.endsWith('.html')) {
                 res.setHeader('Content-Type', 'text/html; charset=utf-8');
             }
+        },
+        index: false // 不自动提供 index.html，由路由处理
+    }));
+    
+    // 确保 Picture 目录可访问
+    app.use('/Picture', express.static(path.join(__dirname, 'Picture'), {
+        setHeaders: (res, filePath) => {
+            if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) {
+                res.setHeader('Content-Type', 'image/jpeg');
+            }
         }
     }));
-    // 确保 Picture 目录可访问
-    app.use('/Picture', express.static(path.join(__dirname, 'Picture')));
     
     console.log('静态文件服务已配置');
     console.log('根目录:', __dirname);
+    console.log('Picture 目录:', path.join(__dirname, 'Picture'));
 } catch (error) {
     console.error('静态文件服务配置错误:', error);
 }
@@ -40,7 +50,8 @@ try {
 app.get('/', (req, res) => {
     try {
         const indexPath = path.join(__dirname, 'index.html');
-        res.sendFile(indexPath, { root: __dirname });
+        console.log('请求根路径，发送 index.html:', indexPath);
+        res.sendFile('index.html', { root: __dirname });
     } catch (error) {
         console.error('发送 index.html 时出错:', error);
         res.status(500).send('无法加载页面: ' + error.message);
@@ -49,7 +60,8 @@ app.get('/', (req, res) => {
 
 // 确保所有静态资源都能正确加载
 app.get('/index.html', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'), { root: __dirname });
+    console.log('请求 /index.html');
+    res.sendFile('index.html', { root: __dirname });
 });
 
 // 检查是否在 Vercel 环境（只读文件系统）
