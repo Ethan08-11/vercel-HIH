@@ -1,8 +1,14 @@
+// 加载环境变量（本地开发）
+if (require.main === module && !process.env.VERCEL) {
+    require('dotenv').config();
+}
+
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const db = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,27 +16,48 @@ const PORT = process.env.PORT || 3000;
 // 中间件
 app.use(cors());
 app.use(express.json());
-app.use(express.static('.')); // 提供静态文件服务
+
+// 提供静态文件服务
+try {
+    app.use(express.static(__dirname));
+    // 确保 Picture 目录可访问
+    app.use('/Picture', express.static(path.join(__dirname, 'Picture')));
+} catch (error) {
+    console.error('静态文件服务配置错误:', error);
+}
 
 // 根路径返回 index.html
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+    try {
+        const indexPath = path.join(__dirname, 'index.html');
+        res.sendFile(indexPath);
+    } catch (error) {
+        console.error('发送 index.html 时出错:', error);
+        res.status(500).send('无法加载页面');
+    }
 });
 
-// 确保数据目录存在
+// 检查是否在 Vercel 环境（只读文件系统）
+const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV;
+
+// 确保数据目录存在（仅在非 Vercel 环境）
 const dataDir = path.join(__dirname, 'data');
-if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir);
+if (!isVercel) {
+    if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+    }
 }
 
-// 确保产品分类目录存在
+// 确保产品分类目录存在（仅在非 Vercel 环境）
 const productsDir = path.join(dataDir, 'products');
-if (!fs.existsSync(productsDir)) {
-    fs.mkdirSync(productsDir);
+if (!isVercel) {
+    if (!fs.existsSync(productsDir)) {
+        fs.mkdirSync(productsDir, { recursive: true });
+    }
 }
 
 // 提交问卷数据的API
-app.post('/api/submit', (req, res) => {
+app.post('/api/submit', async (req, res) => {
     try {
         const { answers, selectedProducts, timestamp } = req.body;
         
@@ -46,13 +73,59 @@ app.post('/api/submit', (req, res) => {
         const submitTime = timestamp || new Date().toISOString();
         const submittedAt = new Date().toLocaleString('zh-CN');
 
-        // 按产品分类存储（使用新的命名格式）
+        // 优先使用数据库存储
+        const useDatabase = !!process.env.MONGODB_URI;
+        
+        if (useDatabase) {
+            // 使用 MongoDB 存储
+            if (selectedProducts && Array.isArray(selectedProducts) && selectedProducts.length > 0) {
+                const savePromises = selectedProducts.map(async (product) => {
+                    const productId = product.id;
+                    const productName = product.name || `产品${productId}`;
+                    
+                    const productRecord = {
+                        submissionId: submissionId,
+                        productId: productId,
+                        productName: productName,
+                        productImage: product.image,
+                        answers: answers,
+                        selectedProducts: selectedProducts,
+                        timestamp: submitTime,
+                        submittedAt: submittedAt,
+                        createdAt: new Date()
+                    };
+                    
+                    return await db.saveSubmission(productRecord);
+                });
+                
+                await Promise.all(savePromises);
+                console.log('收到问卷提交，已按产品分类保存到数据库');
+            }
+            
+            return res.json({
+                success: true,
+                message: '问卷提交成功！',
+                submissionId: submissionId,
+                productsCount: selectedProducts ? selectedProducts.length : 0
+            });
+        }
+
+        // 如果没有配置数据库，使用文件系统（仅本地开发）
+        if (isVercel) {
+            return res.json({
+                success: false,
+                message: '错误：Vercel 环境需要配置 MongoDB 数据库。请设置 MONGODB_URI 环境变量。',
+                submissionId: submissionId,
+                productsCount: selectedProducts ? selectedProducts.length : 0
+            });
+        }
+
+        // 本地文件系统存储（仅用于开发）
         if (selectedProducts && Array.isArray(selectedProducts) && selectedProducts.length > 0) {
             selectedProducts.forEach(product => {
                 const productId = product.id;
                 const productName = product.name || `产品${productId}`;
                 
-                // 为每个产品创建完整的记录
                 const productRecord = {
                     submissionId: submissionId,
                     productId: productId,
@@ -64,34 +137,19 @@ app.post('/api/submit', (req, res) => {
                     submittedAt: submittedAt
                 };
 
-                // 使用新格式保存到主目录：[产品ID]_[产品名称]_[提交ID].json
                 const filename = `${productId}_${productName}_${submissionId}.json`;
                 const filepath = path.join(dataDir, filename);
                 fs.writeFileSync(filepath, JSON.stringify(productRecord, null, 2), 'utf8');
                 
-                // 同时保存到产品分类目录（保持一致性）
                 const productFilepath = path.join(productsDir, filename);
                 fs.writeFileSync(productFilepath, JSON.stringify(productRecord, null, 2), 'utf8');
                 
                 console.log(`产品 ${productName} (ID: ${productId}) 的提交已保存: ${filename}`);
             });
-        } else {
-            // 如果没有选择产品，保存一个通用记录（不应该发生，但作为备用）
-            const submission = {
-                id: submissionId,
-                timestamp: submitTime,
-                answers: answers,
-                selectedProducts: selectedProducts || [],
-                submittedAt: submittedAt
-            };
-            const filename = `submission_${submissionId}.json`;
-            const filepath = path.join(dataDir, filename);
-            fs.writeFileSync(filepath, JSON.stringify(submission, null, 2), 'utf8');
         }
 
         console.log('收到问卷提交，已按产品分类保存');
 
-        // 返回成功响应
         res.json({
             success: true,
             message: '问卷提交成功！',
@@ -109,8 +167,37 @@ app.post('/api/submit', (req, res) => {
 });
 
 // 获取所有提交记录的API（可选，用于查看提交历史）
-app.get('/api/submissions', (req, res) => {
+app.get('/api/submissions', async (req, res) => {
     try {
+        const useDatabase = !!process.env.MONGODB_URI;
+        
+        if (useDatabase) {
+            const submissions = await db.getAllSubmissions();
+            return res.json({
+                success: true,
+                count: submissions.length,
+                submissions: submissions
+            });
+        }
+        
+        // 文件系统读取（仅本地开发）
+        if (isVercel) {
+            return res.json({
+                success: true,
+                count: 0,
+                submissions: [],
+                message: 'Vercel 环境需要配置 MongoDB 数据库'
+            });
+        }
+        
+        if (!fs.existsSync(dataDir)) {
+            return res.json({
+                success: true,
+                count: 0,
+                submissions: []
+            });
+        }
+        
         const files = fs.readdirSync(dataDir);
         const submissions = files
             .filter(file => file.endsWith('.json') && !file.startsWith('statistics'))
@@ -119,7 +206,7 @@ app.get('/api/submissions', (req, res) => {
                 const content = fs.readFileSync(filepath, 'utf8');
                 return JSON.parse(content);
             })
-            .sort((a, b) => (b.submissionId || b.id) - (a.submissionId || a.id)); // 按时间倒序
+            .sort((a, b) => (b.submissionId || b.id) - (a.submissionId || a.id));
 
         res.json({
             success: true,
@@ -136,9 +223,41 @@ app.get('/api/submissions', (req, res) => {
 });
 
 // 获取按产品分类的提交记录
-app.get('/api/products/:productId', (req, res) => {
+app.get('/api/products/:productId', async (req, res) => {
     try {
+        const useDatabase = !!process.env.MONGODB_URI;
         const productId = req.params.productId;
+        
+        if (useDatabase) {
+            const submissions = await db.getProductSubmissions(productId);
+            return res.json({
+                success: true,
+                productId: productId,
+                count: submissions.length,
+                submissions: submissions
+            });
+        }
+        
+        // 文件系统读取（仅本地开发）
+        if (isVercel) {
+            return res.json({
+                success: true,
+                productId: productId,
+                count: 0,
+                submissions: [],
+                message: 'Vercel 环境需要配置 MongoDB 数据库'
+            });
+        }
+        
+        if (!fs.existsSync(productsDir)) {
+            return res.json({
+                success: true,
+                productId: productId,
+                count: 0,
+                submissions: []
+            });
+        }
+        
         const files = fs.readdirSync(productsDir);
         
         const productSubmissions = files
@@ -148,7 +267,7 @@ app.get('/api/products/:productId', (req, res) => {
                 const content = fs.readFileSync(filepath, 'utf8');
                 return JSON.parse(content);
             })
-            .sort((a, b) => b.submissionId - a.submissionId); // 按时间倒序
+            .sort((a, b) => b.submissionId - a.submissionId);
 
         res.json({
             success: true,
@@ -166,8 +285,37 @@ app.get('/api/products/:productId', (req, res) => {
 });
 
 // 获取所有产品的统计信息
-app.get('/api/statistics', (req, res) => {
+app.get('/api/statistics', async (req, res) => {
     try {
+        const useDatabase = !!process.env.MONGODB_URI;
+        
+        if (useDatabase) {
+            const statistics = await db.getStatistics();
+            return res.json({
+                success: true,
+                totalProducts: statistics.length,
+                statistics: statistics
+            });
+        }
+        
+        // 文件系统读取（仅本地开发）
+        if (isVercel) {
+            return res.json({
+                success: true,
+                totalProducts: 0,
+                statistics: [],
+                message: 'Vercel 环境需要配置 MongoDB 数据库'
+            });
+        }
+        
+        if (!fs.existsSync(productsDir)) {
+            return res.json({
+                success: true,
+                totalProducts: 0,
+                statistics: []
+            });
+        }
+        
         const files = fs.readdirSync(productsDir);
         const statistics = {};
         
@@ -199,7 +347,6 @@ app.get('/api/statistics', (req, res) => {
                 }
             });
 
-        // 转换为数组并按选择次数排序
         const statisticsArray = Object.values(statistics)
             .sort((a, b) => b.count - a.count);
 
@@ -217,11 +364,12 @@ app.get('/api/statistics', (req, res) => {
     }
 });
 
-// 为 Vercel 导出 handler（无服务器函数格式）
-module.exports = app;
-
-// 本地开发时启动服务器
-if (require.main === module) {
+// 初始化数据库连接（在服务器启动时）
+async function initServer() {
+    // 尝试连接数据库
+    await db.connectDB();
+    
+    // 启动服务器
     app.listen(PORT, '0.0.0.0', () => {
         const networkInterfaces = os.networkInterfaces();
         let localIP = 'localhost';
@@ -242,13 +390,29 @@ if (require.main === module) {
         console.log(`本地访问: http://localhost:${PORT}`);
         console.log(`局域网访问: http://${localIP}:${PORT}`);
         console.log(`\n在手机/平板上访问: http://${localIP}:${PORT}`);
-        console.log(`\n数据保存目录: ${dataDir}`);
-        console.log(`产品分类目录: ${productsDir}`);
+        
+        if (process.env.MONGODB_URI) {
+            console.log(`\n✅ 数据库: MongoDB (已连接)`);
+        } else {
+            console.log(`\n⚠️  数据库: 未配置 (使用文件系统，仅本地开发)`);
+            console.log(`   数据保存目录: ${dataDir}`);
+            console.log(`   产品分类目录: ${productsDir}`);
+        }
+        
         console.log('\n可用API:');
         console.log('  POST /api/submit - 提交问卷');
         console.log('  GET  /api/submissions - 获取所有提交记录');
         console.log('  GET  /api/products/:productId - 获取指定产品的提交记录');
         console.log('  GET  /api/statistics - 获取所有产品的统计信息');
     });
+}
+
+// 为 Vercel 导出 handler（无服务器函数格式）
+// 必须在文件末尾导出，确保所有路由都已定义
+module.exports = app;
+
+// 本地开发时启动服务器
+if (require.main === module) {
+    initServer().catch(console.error);
 }
 
