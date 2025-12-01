@@ -49,12 +49,36 @@ try {
 // 明确处理静态文件路由
 app.get('/style.css', (req, res) => {
     console.log('请求 /style.css');
-    res.sendFile('style.css', { root: __dirname });
+    res.sendFile('style.css', { root: __dirname }, (err) => {
+        if (err) {
+            console.error('发送 style.css 失败:', err);
+            res.status(404).send('File not found');
+        }
+    });
 });
 
 app.get('/script.js', (req, res) => {
     console.log('请求 /script.js');
-    res.sendFile('script.js', { root: __dirname });
+    res.sendFile('script.js', { root: __dirname }, (err) => {
+        if (err) {
+            console.error('发送 script.js 失败:', err);
+            res.status(404).send('File not found');
+        }
+    });
+});
+
+// 处理图片请求
+app.get('/Picture/:filename', (req, res) => {
+    const filename = req.params.filename;
+    console.log('请求图片:', filename);
+    res.sendFile(filename, { root: path.join(__dirname, 'Picture') }, (err) => {
+        if (err) {
+            console.error('发送图片失败:', err);
+            res.status(404).send('Image not found');
+        } else {
+            console.log('图片发送成功:', filename);
+        }
+    });
 });
 
 // 根路径返回 index.html

@@ -1,33 +1,34 @@
 // 产品图片数据 - 使用本地图片
+// 使用绝对路径确保在 Vercel 上正确加载
 const productImages = [
     {
         id: 1,
-        image: 'Picture/1.jpg',
+        image: '/Picture/1.jpg',
         name: '玩偶'
     },
     {
         id: 2,
-        image: 'Picture/2.jpg',
+        image: '/Picture/2.jpg',
         name: '蓝色单肩包'
     },
     {
         id: 3,
-        image: 'Picture/3.jpg',
+        image: '/Picture/3.jpg',
         name: '白色单肩包'
     },
     {
         id: 4,
-        image: 'Picture/4.jpg',
+        image: '/Picture/4.jpg',
         name: '镜子'
     },
     {
         id: 5,
-        image: 'Picture/5.jpg',
+        image: '/Picture/5.jpg',
         name: '石膏香片'
     },
     {
         id: 6,
-        image: 'Picture/6.jpg',
+        image: '/Picture/6.jpg',
         name: '充电宝'
     }
 ];
