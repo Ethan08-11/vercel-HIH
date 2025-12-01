@@ -17,42 +17,46 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// 提供静态文件服务
-try {
-    // 静态文件服务（必须在路由之前）
-    app.use(express.static(__dirname, {
-        setHeaders: (res, filePath) => {
-            // 为 HTML 文件设置正确的 Content-Type
-            if (filePath.endsWith('.html')) {
-                res.setHeader('Content-Type', 'text/html; charset=utf-8');
-            }
-        },
-        index: false // 不自动提供 index.html，由路由处理
-    }));
-    
-    // 确保 Picture 目录可访问
-    app.use('/Picture', express.static(path.join(__dirname, 'Picture'), {
-        setHeaders: (res, filePath) => {
-            if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) {
-                res.setHeader('Content-Type', 'image/jpeg');
-            }
+// 提供静态文件服务（必须在所有路由之前）
+// 使用 express.static 处理所有静态文件
+app.use(express.static(__dirname, {
+    setHeaders: (res, filePath) => {
+        // 为不同文件类型设置正确的 Content-Type
+        if (filePath.endsWith('.html')) {
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        } else if (filePath.endsWith('.css')) {
+            res.setHeader('Content-Type', 'text/css; charset=utf-8');
+        } else if (filePath.endsWith('.js')) {
+            res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+        } else if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) {
+            res.setHeader('Content-Type', 'image/jpeg');
         }
-    }));
-    
-    console.log('静态文件服务已配置');
-    console.log('根目录:', __dirname);
-    console.log('Picture 目录:', path.join(__dirname, 'Picture'));
-} catch (error) {
-    console.error('静态文件服务配置错误:', error);
-}
+    },
+    index: false // 不自动提供 index.html，由路由处理
+}));
 
-// 明确处理静态文件路由
+// 确保 Picture 目录可访问
+app.use('/Picture', express.static(path.join(__dirname, 'Picture'), {
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) {
+            res.setHeader('Content-Type', 'image/jpeg');
+        }
+    }
+}));
+
+console.log('静态文件服务已配置');
+console.log('根目录:', __dirname);
+console.log('Picture 目录:', path.join(__dirname, 'Picture'));
+
+// 明确处理静态文件路由（作为备用，express.static 应该已经处理了）
 app.get('/style.css', (req, res) => {
     console.log('请求 /style.css');
     res.sendFile('style.css', { root: __dirname }, (err) => {
         if (err) {
             console.error('发送 style.css 失败:', err);
             res.status(404).send('File not found');
+        } else {
+            console.log('style.css 发送成功');
         }
     });
 });
@@ -63,6 +67,8 @@ app.get('/script.js', (req, res) => {
         if (err) {
             console.error('发送 script.js 失败:', err);
             res.status(404).send('File not found');
+        } else {
+            console.log('script.js 发送成功');
         }
     });
 });
