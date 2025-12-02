@@ -361,86 +361,6 @@ app.get('/api/products/:productId', async (req, res) => {
     }
 });
 
-// 获取所有产品的统计信息
-app.get('/api/statistics', async (req, res) => {
-    try {
-        const useDatabase = !!process.env.MONGODB_URI;
-        
-        if (useDatabase) {
-            const statistics = await db.getStatistics();
-            return res.json({
-                success: true,
-                totalProducts: statistics.length,
-                statistics: statistics
-            });
-        }
-        
-        // 文件系统读取（仅本地开发）
-        if (isVercel) {
-            return res.json({
-                success: true,
-                totalProducts: 0,
-                statistics: [],
-                message: 'Vercel 环境需要配置 MongoDB 数据库'
-            });
-        }
-        
-        if (!fs.existsSync(productsDir)) {
-            return res.json({
-                success: true,
-                totalProducts: 0,
-                statistics: []
-            });
-        }
-        
-        const files = fs.readdirSync(productsDir);
-        const statistics = {};
-        
-        files
-            .filter(file => file.endsWith('.json'))
-            .forEach(file => {
-                try {
-                    const filepath = path.join(productsDir, file);
-                    const content = fs.readFileSync(filepath, 'utf8');
-                    const record = JSON.parse(content);
-                    
-                    const productId = record.productId;
-                    if (!statistics[productId]) {
-                        statistics[productId] = {
-                            productId: productId,
-                            productName: record.productName,
-                            count: 0,
-                            submissions: []
-                        };
-                    }
-                    
-                    statistics[productId].count++;
-                    statistics[productId].submissions.push({
-                        submissionId: record.submissionId,
-                        submittedAt: record.submittedAt
-                    });
-                } catch (error) {
-                    console.error(`处理文件 ${file} 时出错:`, error);
-                }
-            });
-
-        const statisticsArray = Object.values(statistics)
-            .sort((a, b) => b.count - a.count);
-
-        res.json({
-            success: true,
-            totalProducts: statisticsArray.length,
-            statistics: statisticsArray
-        });
-    } catch (error) {
-        console.error('获取统计信息时出错:', error);
-        res.status(500).json({
-            success: false,
-            message: '服务器错误：' + error.message
-        });
-    }
-});
-
 // 导出所有数据为JSON文件（用于同步到本地）
 app.get('/api/export', async (req, res) => {
     try {
@@ -504,17 +424,32 @@ app.get('/api/heart-counts', async (req, res) => {
         if (useDatabase) {
             const counts = await db.getHeartCounts();
             console.log('从数据库获取爱心数量:', counts);
+            
+            // 确保所有产品都有数据（如果数据库中没有，返回默认值2000）
+            const allProductIds = [1, 2, 3, 4, 5, 6];
+            const result = {};
+            allProductIds.forEach(productId => {
+                result[productId] = counts[productId] !== undefined ? counts[productId] : 2000;
+            });
+            
             return res.json({
                 success: true,
-                heartCounts: counts
+                heartCounts: result
             });
         }
         
-        // 如果没有数据库，返回空对象（前端会使用默认值2000）
-        console.warn('MongoDB未配置，返回空爱心数量');
+        // 如果没有数据库，返回所有产品的默认值2000
+        console.warn('MongoDB未配置，返回默认爱心数量');
+        const allProductIds = [1, 2, 3, 4, 5, 6];
+        const defaultCounts = {};
+        allProductIds.forEach(productId => {
+            defaultCounts[productId] = 2000;
+        });
+        
         res.json({
             success: true,
-            heartCounts: {}
+            heartCounts: defaultCounts,
+            message: '数据库未配置，返回默认值'
         });
     } catch (error) {
         console.error('获取爱心数量时出错:', error);
@@ -549,20 +484,31 @@ app.post('/api/heart-count', async (req, res) => {
             };
             
             // 更新爱心数量（同时记录点击历史）
-            const newCount = await db.updateHeartCount(parseInt(productId), parseInt(increment), userInfo);
-            
-            if (newCount !== null) {
-                console.log(`✅ 产品 ${productId} 爱心数量已保存到数据库: ${newCount}`);
-                return res.json({
-                    success: true,
-                    productId: parseInt(productId),
-                    count: newCount,
-                    message: '数据已保存到服务器'
-                });
-            } else {
+            try {
+                const newCount = await db.updateHeartCount(parseInt(productId), parseInt(increment), userInfo);
+                
+                if (newCount !== null && newCount !== undefined) {
+                    console.log(`✅ 产品 ${productId} 爱心数量已保存到数据库: ${newCount}`);
+                    return res.json({
+                        success: true,
+                        productId: parseInt(productId),
+                        count: newCount,
+                        message: '数据已保存到服务器'
+                    });
+                } else {
+                    console.error(`❌ 产品 ${productId} 数据库更新返回null`);
+                    return res.status(500).json({
+                        success: false,
+                        message: '数据库更新失败：返回值为null',
+                        productId: parseInt(productId)
+                    });
+                }
+            } catch (dbError) {
+                console.error(`❌ 产品 ${productId} 数据库更新异常:`, dbError);
                 return res.status(500).json({
                     success: false,
-                    message: '数据库更新失败'
+                    message: '数据库更新异常：' + dbError.message,
+                    productId: parseInt(productId)
                 });
             }
         }
@@ -582,34 +528,6 @@ app.post('/api/heart-count', async (req, res) => {
     }
 });
 
-// 获取产品的点击统计信息
-app.get('/api/heart-stats/:productId', async (req, res) => {
-    try {
-        const productId = parseInt(req.params.productId);
-        const useDatabase = !!process.env.MONGODB_URI;
-        
-        if (useDatabase) {
-            const stats = await db.getHeartClickStats(productId);
-            return res.json({
-                success: true,
-                productId: productId,
-                stats: stats
-            });
-        }
-        
-        res.json({
-            success: false,
-            message: '数据库未配置'
-        });
-    } catch (error) {
-        console.error('获取点击统计时出错:', error);
-        res.status(500).json({
-            success: false,
-            message: '服务器错误：' + error.message
-        });
-    }
-});
-
 // 初始化数据库连接（在服务器启动时）
 async function initServer() {
     // 尝试连接数据库
@@ -618,8 +536,18 @@ async function initServer() {
     // 初始化所有产品的爱心数量
     if (process.env.MONGODB_URI) {
         const productIds = [1, 2, 3, 4, 5, 6]; // 根据实际产品ID调整
-        await db.initHeartCounts(productIds);
-        console.log('✅ 爱心数量已初始化');
+        try {
+            await db.initHeartCounts(productIds);
+            console.log('✅ 爱心数量已初始化');
+            
+            // 验证初始化结果
+            const counts = await db.getHeartCounts();
+            console.log('初始化后的爱心数量:', counts);
+        } catch (error) {
+            console.error('❌ 初始化爱心数量失败:', error);
+        }
+    } else {
+        console.warn('⚠️  MONGODB_URI未配置，无法初始化爱心数量');
     }
     
     // 启动服务器
@@ -656,11 +584,9 @@ async function initServer() {
         console.log('  POST /api/submit - 提交问卷');
         console.log('  GET  /api/submissions - 获取所有提交记录');
         console.log('  GET  /api/products/:productId - 获取指定产品的提交记录');
-        console.log('  GET  /api/statistics - 获取所有产品的统计信息');
         console.log('  GET  /api/export - 导出所有数据为JSON文件');
         console.log('  GET  /api/heart-counts - 获取所有产品的爱心数量');
         console.log('  POST /api/heart-count - 更新产品的爱心数量（同时记录点击历史）');
-        console.log('  GET  /api/heart-stats/:productId - 获取产品的点击统计信息');
     });
 }
 

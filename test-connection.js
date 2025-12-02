@@ -96,8 +96,7 @@ client.connect()
             console.error('  2. 尝试 ping 主机地址');
         }
         
-        console.error('\n💡 建议: 如果无法连接，可以使用网页导出功能');
-        console.error('  访问: https://questionnaire-app.zeabur.app/统计页面.html');
+        console.error('\n💡 建议: 如果无法连接，请检查MongoDB连接配置');
         process.exit(1);
     });
 

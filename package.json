@@ -7,7 +7,6 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "build": "echo Build completed - No build step required for this project",
-    "stats": "node 统计产品数量.js",
     "sync": "node sync-data.js",
     "test-connection": "node test-connection.js",
     "convert-webp": "node convert-to-webp.js",

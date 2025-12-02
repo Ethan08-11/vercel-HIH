@@ -99,56 +99,11 @@ async function getProductSubmissions(productId) {
     }
 }
 
-// 获取统计信息
-async function getStatistics() {
-    const database = await connectDB();
-    if (!database) {
-        return [];
-    }
-
-    try {
-        const collection = database.collection(COLLECTION_NAME);
-        
-        // 使用聚合管道统计每个产品的数量
-        const statistics = await collection.aggregate([
-            {
-                $group: {
-                    _id: '$productId',
-                    productName: { $first: '$productName' },
-                    count: { $sum: 1 },
-                    submissions: {
-                        $push: {
-                            submissionId: '$submissionId',
-                            submittedAt: '$submittedAt'
-                        }
-                    }
-                }
-            },
-            {
-                $project: {
-                    _id: 0,
-                    productId: '$_id',
-                    productName: 1,
-                    count: 1,
-                    submissions: 1
-                }
-            },
-            {
-                $sort: { count: -1 }
-            }
-        ]).toArray();
-
-        return statistics;
-    } catch (error) {
-        console.error('获取统计信息时出错:', error);
-        return [];
-    }
-}
-
 // 获取所有产品的爱心数量
 async function getHeartCounts() {
     const database = await connectDB();
     if (!database) {
+        console.warn('数据库未连接，返回空对象');
         return {};
     }
 
@@ -159,6 +114,7 @@ async function getHeartCounts() {
         counts.forEach(item => {
             result[item.productId] = item.count;
         });
+        console.log(`从数据库获取到 ${Object.keys(result).length} 个产品的爱心数量:`, result);
         return result;
     } catch (error) {
         console.error('获取爱心数量时出错:', error);
@@ -170,40 +126,76 @@ async function getHeartCounts() {
 async function updateHeartCount(productId, increment, userInfo = {}) {
     const database = await connectDB();
     if (!database) {
+        console.error('数据库未连接，无法更新爱心数量');
         return null;
     }
 
     try {
         const collection = database.collection('heartCounts');
         
-        // 先检查是否存在
+        // 先检查文档是否存在
         const existing = await collection.findOne({ productId: productId });
         
+        let newCount;
+        
         if (!existing) {
-            // 如果不存在，先创建初始记录（2000），然后再增加
-            await collection.insertOne({
+            // 如果不存在，创建新文档，初始值为2000+增量
+            const initialCount = 2000 + increment;
+            const result = await collection.insertOne({
                 productId: productId,
-                count: 2000,
+                count: initialCount,
                 createdAt: new Date(),
                 updatedAt: new Date()
             });
-        }
-        
-        // 使用 upsert 操作，如果不存在则创建，存在则更新
-        const result = await collection.findOneAndUpdate(
-            { productId: productId },
-            { 
-                $inc: { count: increment },
-                $set: { updatedAt: new Date() }
-            },
-            { 
-                upsert: true,
-                returnDocument: 'after'
+            
+            if (result.insertedId) {
+                newCount = initialCount;
+                console.log(`✅ 产品 ${productId} 创建新记录，初始数量: ${newCount}`);
+            } else {
+                throw new Error('插入新文档失败');
             }
-        );
-        
-        const newCount = result.value ? result.value.count : null;
-        console.log(`产品 ${productId} 爱心数量已更新: ${increment > 0 ? '+' : ''}${increment}, 新数量: ${newCount}`);
+        } else {
+            // 如果存在，使用 $inc 更新（只执行一次更新操作）
+            // 先执行更新操作
+            const updateResult = await collection.updateOne(
+                { productId: productId },
+                { 
+                    $inc: { count: increment },
+                    $set: { updatedAt: new Date() }
+                }
+            );
+            
+            // 检查更新是否成功
+            if (updateResult.modifiedCount === 1 || updateResult.matchedCount === 1) {
+                // 更新成功，查询最新值
+                const updated = await collection.findOne({ productId: productId });
+                newCount = updated ? updated.count : null;
+                if (newCount !== null) {
+                    console.log(`✅ 产品 ${productId} 爱心数量已更新: ${increment > 0 ? '+' : ''}${increment}, 新数量: ${newCount}`);
+                } else {
+                    throw new Error('更新后无法获取新数量');
+                }
+            } else {
+                // 更新失败，尝试使用 findOneAndUpdate 作为备用方法
+                const result = await collection.findOneAndUpdate(
+                    { productId: productId },
+                    { 
+                        $inc: { count: increment },
+                        $set: { updatedAt: new Date() }
+                    },
+                    { 
+                        returnDocument: 'after'
+                    }
+                );
+                
+                if (result && result.value) {
+                    newCount = result.value.count;
+                    console.log(`✅ 产品 ${productId} 爱心数量已更新（备用方法）: ${increment > 0 ? '+' : ''}${increment}, 新数量: ${newCount}`);
+                } else {
+                    throw new Error('所有更新方法都失败');
+                }
+            }
+        }
         
         // 记录点击历史（异步执行，不阻塞主流程）
         recordHeartClick(productId, increment, userInfo).catch(err => {
@@ -212,8 +204,11 @@ async function updateHeartCount(productId, increment, userInfo = {}) {
         
         return newCount;
     } catch (error) {
-        console.error('更新爱心数量时出错:', error);
-        throw error;
+        console.error(`❌ 更新产品 ${productId} 爱心数量时出错:`, error);
+        console.error('错误详情:', error.message);
+        console.error('错误堆栈:', error.stack);
+        // 不抛出错误，返回null，让调用者处理
+        return null;
     }
 }
 
@@ -276,59 +271,15 @@ async function recordHeartClick(productId, increment, userInfo = {}) {
     }
 }
 
-// 获取产品的点击历史统计
-async function getHeartClickStats(productId) {
-    const database = await connectDB();
-    if (!database) {
-        return null;
-    }
-
-    try {
-        const collection = database.collection('heartClicks');
-        
-        // 统计总点击次数
-        const totalClicks = await collection.countDocuments({ productId: productId });
-        
-        // 统计增加和减少的次数
-        const increaseCount = await collection.countDocuments({ 
-            productId: productId, 
-            increment: { $gt: 0 } 
-        });
-        const decreaseCount = await collection.countDocuments({ 
-            productId: productId, 
-            increment: { $lt: 0 } 
-        });
-        
-        // 获取最近的点击记录
-        const recentClicks = await collection
-            .find({ productId: productId })
-            .sort({ timestamp: -1 })
-            .limit(100)
-            .toArray();
-        
-        return {
-            totalClicks,
-            increaseCount,
-            decreaseCount,
-            recentClicks
-        };
-    } catch (error) {
-        console.error('获取点击统计时出错:', error);
-        return null;
-    }
-}
-
 module.exports = {
     connectDB,
     disconnectDB,
     saveSubmission,
     getAllSubmissions,
     getProductSubmissions,
-    getStatistics,
     getHeartCounts,
     updateHeartCount,
     initHeartCounts,
-    recordHeartClick,
-    getHeartClickStats
+    recordHeartClick
 };
 

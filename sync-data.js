@@ -183,7 +183,7 @@ async function syncData() {
             console.error('  2. 检查防火墙是否阻止了 MongoDB 端口');
             console.error('  3. 确认 MongoDB 服务器地址是否正确');
             console.error('  4. 检查是否需要 VPN 或特殊网络配置');
-            console.error('  5. 尝试使用网页导出功能（统计页面）');
+            console.error('  5. 检查MongoDB连接配置');
             
             // 检查连接字符串格式
             if (!MONGODB_URI.startsWith('mongodb://') && !MONGODB_URI.startsWith('mongodb+srv://')) {
@@ -214,9 +214,9 @@ async function syncData() {
         }
         
         console.error('\n💡 建议解决方案:');
-        console.error('  方案1: 使用网页导出功能');
-        console.error('    → 访问: https://questionnaire-app.zeabur.app/统计页面.html');
-        console.error('    → 点击"导出数据"按钮下载 JSON 文件');
+        console.error('  方案1: 检查MongoDB连接配置');
+        console.error('    → 确认MONGODB_URI环境变量已正确设置');
+        console.error('    → 检查网络连接和防火墙设置');
         console.error('');
         console.error('  方案2: 检查网络和防火墙设置');
         console.error('    → 确认可以访问 Zeabur 的 MongoDB 服务');

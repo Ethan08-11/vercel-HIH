@@ -318,22 +318,34 @@ async function updateHeartCount(productIndex, increment) {
 async function loadHeartCountsFromServer() {
     try {
         const API_BASE_URL = window.API_BASE_URL || window.location.origin;
-        const response = await fetch(`${API_BASE_URL}/api/heart-counts`);
+        console.log('正在从服务器加载爱心数量:', `${API_BASE_URL}/api/heart-counts`);
+        
+        const response = await fetch(`${API_BASE_URL}/api/heart-counts`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            cache: 'no-cache' // 确保获取最新数据
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP错误: ${response.status} ${response.statusText}`);
+        }
+        
         const result = await response.json();
+        console.log('服务器返回的数据:', result);
         
         if (result.success && result.heartCounts) {
-            // 更新所有产品的爱心数量
+            // 更新所有产品的爱心数量（强制使用服务器数据）
             productImages.forEach((item, index) => {
                 const productId = item.id;
+                // 强制使用服务器返回的数据，确保数据一致性
                 if (result.heartCounts[productId] !== undefined) {
-                    // 优先使用服务器返回的数据
                     heartCounts[index] = result.heartCounts[productId];
                 } else {
-                    // 如果服务器没有该产品的数据，且本地也没有，使用默认值
-                    if (heartCounts[index] === undefined) {
-                        heartCounts[index] = 2000;
-                    }
-                    // 如果本地已有数据，保持不变（可能是刚更新的）
+                    // 如果服务器没有该产品的数据，使用默认值
+                    heartCounts[index] = 2000;
+                    console.warn(`产品 ${productId} 在服务器中没有数据，使用默认值2000`);
                 }
                 
                 // 更新显示
@@ -343,19 +355,18 @@ async function loadHeartCountsFromServer() {
                 }
             });
             
-            console.log('爱心数量已从服务器加载:', result.heartCounts);
+            console.log('✅ 爱心数量已从服务器加载:', result.heartCounts);
+            console.log('本地heartCounts:', heartCounts);
         } else {
-            console.warn('服务器返回的数据格式不正确');
+            console.warn('❌ 服务器返回的数据格式不正确:', result);
             // 如果服务器返回失败，确保所有产品都有默认值
             productImages.forEach((item, index) => {
-                if (heartCounts[index] === undefined) {
-                    heartCounts[index] = 2000;
-                }
+                heartCounts[index] = 2000;
             });
         }
     } catch (error) {
-        console.error('从服务器加载爱心数量失败:', error);
-        // 如果失败，确保所有产品都有默认值（但不覆盖已有数据）
+        console.error('❌ 从服务器加载爱心数量失败:', error);
+        // 如果失败，确保所有产品都有默认值
         productImages.forEach((item, index) => {
             if (heartCounts[index] === undefined) {
                 heartCounts[index] = 2000;
