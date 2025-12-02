@@ -441,6 +441,61 @@ app.get('/api/statistics', async (req, res) => {
     }
 });
 
+// 导出所有数据为JSON文件（用于同步到本地）
+app.get('/api/export', async (req, res) => {
+    try {
+        const useDatabase = !!process.env.MONGODB_URI;
+        
+        if (!useDatabase) {
+            return res.status(400).json({
+                success: false,
+                message: '此功能需要 MongoDB 数据库支持'
+            });
+        }
+        
+        // 从数据库获取所有提交记录
+        const submissions = await db.getAllSubmissions();
+        
+        // 按产品分类组织数据（模拟本地文件结构）
+        const exportData = {
+            exportTime: new Date().toISOString(),
+            exportTimeLocal: new Date().toLocaleString('zh-CN'),
+            totalSubmissions: submissions.length,
+            submissions: submissions,
+            byProduct: {}
+        };
+        
+        // 按产品分类
+        submissions.forEach(submission => {
+            const productId = submission.productId;
+            if (!exportData.byProduct[productId]) {
+                exportData.byProduct[productId] = {
+                    productId: productId,
+                    productName: submission.productName,
+                    count: 0,
+                    submissions: []
+                };
+            }
+            exportData.byProduct[productId].count++;
+            exportData.byProduct[productId].submissions.push(submission);
+        });
+        
+        // 设置响应头，让浏览器下载文件
+        const filename = `questionnaire-export-${Date.now()}.json`;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        
+        res.json(exportData);
+        
+    } catch (error) {
+        console.error('导出数据时出错:', error);
+        res.status(500).json({
+            success: false,
+            message: '导出数据失败：' + error.message
+        });
+    }
+});
+
 // 初始化数据库连接（在服务器启动时）
 async function initServer() {
     // 尝试连接数据库
@@ -481,6 +536,7 @@ async function initServer() {
         console.log('  GET  /api/submissions - 获取所有提交记录');
         console.log('  GET  /api/products/:productId - 获取指定产品的提交记录');
         console.log('  GET  /api/statistics - 获取所有产品的统计信息');
+        console.log('  GET  /api/export - 导出所有数据为JSON文件');
     });
 }
 

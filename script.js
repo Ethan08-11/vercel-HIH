@@ -66,14 +66,55 @@ function createProductCard(item, index) {
     imageContainer.className = 'product-image-container';
     imageContainer.onclick = () => selectProduct(index);
     
+    // 添加加载占位符
+    const loadingPlaceholder = document.createElement('div');
+    loadingPlaceholder.className = 'image-loading';
+    loadingPlaceholder.innerHTML = `
+        <div class="loading-spinner"></div>
+        <div class="loading-text">加载中...</div>
+    `;
+    
     const img = document.createElement('img');
     img.className = 'product-image';
-    img.src = item.image;
     img.alt = item.name;
+    img.loading = 'lazy'; // 浏览器原生懒加载
+    
+    // 使用 data-src 存储图片路径，实现懒加载
+    // 只对第一张图片立即加载
+    if (index === 0) {
+        img.src = item.image;
+        img.dataset.loaded = 'false';
+    } else {
+        img.dataset.src = item.image;
+        img.dataset.loaded = 'false';
+        loadingPlaceholder.style.display = 'none'; // 未加载的图片先隐藏占位符
+    }
+    
+    // 图片加载完成事件（统一处理所有图片）
+    img.addEventListener('load', function() {
+        this.dataset.loaded = 'true';
+        const placeholder = this.parentElement.querySelector('.image-loading');
+        if (placeholder) {
+            placeholder.style.display = 'none';
+        }
+        // 淡入动画
+        this.style.opacity = '0';
+        setTimeout(() => {
+            this.style.opacity = '1';
+        }, 10);
+    });
+    
+    // 如果图片已经缓存（complete），立即触发加载完成
+    if (img.complete && img.naturalHeight !== 0) {
+        img.dataset.loaded = 'true';
+        loadingPlaceholder.style.display = 'none';
+        img.style.opacity = '1';
+    }
+    
     img.onerror = function() {
         // 如果图片加载失败，显示占位符
+        loadingPlaceholder.innerHTML = '<div class="image-placeholder">图片加载失败</div>';
         this.style.display = 'none';
-        imageContainer.innerHTML = '<div class="image-placeholder">图片加载失败</div>';
     };
     
     // 选中标记
@@ -81,6 +122,7 @@ function createProductCard(item, index) {
     selectedMark.className = 'selected-mark';
     selectedMark.innerHTML = '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>';
     
+    imageContainer.appendChild(loadingPlaceholder);
     imageContainer.appendChild(img);
     imageContainer.appendChild(selectedMark);
     card.appendChild(imageContainer);
@@ -197,12 +239,61 @@ function selectProduct(productIndex) {
     checkAllAnswered();
 }
 
+// 加载图片（懒加载）
+function loadImage(index) {
+    const card = document.querySelector(`[data-index="${index}"]`);
+    if (!card) return;
+    
+    const img = card.querySelector('.product-image');
+    if (!img) return;
+    
+    // 如果图片已经加载，直接返回
+    if (img.dataset.loaded === 'true') return;
+    
+    // 显示加载占位符
+    const loadingPlaceholder = card.querySelector('.image-loading');
+    if (loadingPlaceholder) {
+        loadingPlaceholder.style.display = 'flex';
+    }
+    
+    // 如果图片还没有 src，从 data-src 加载
+    if (img.dataset.src && !img.src) {
+        // 如果已经预加载，直接使用
+        if (img.dataset.preloaded === 'true') {
+            img.src = img.dataset.src;
+        } else {
+            img.src = img.dataset.src;
+        }
+    }
+    
+    // 预加载相邻的图片（提前一张）
+    const nextIndex = index + 1;
+    if (nextIndex < productImages.length) {
+        const nextCard = document.querySelector(`[data-index="${nextIndex}"]`);
+        if (nextCard) {
+            const nextImg = nextCard.querySelector('.product-image');
+            if (nextImg && nextImg.dataset.src && nextImg.dataset.loaded !== 'true') {
+                // 预加载下一张图片（静默加载，不显示占位符）
+                const preloadImg = new Image();
+                preloadImg.src = nextImg.dataset.src;
+                preloadImg.onload = function() {
+                    // 预加载完成，但不立即设置到img元素，等用户切换时再设置
+                    nextImg.dataset.preloaded = 'true';
+                };
+            }
+        }
+    }
+}
+
 // 显示指定产品
 function showProduct(index) {
     currentIndex = index;
     const carouselWrapper = document.getElementById('carouselWrapper');
     const translateX = -index * 100;
     carouselWrapper.style.transform = `translateX(${translateX}%)`;
+    
+    // 加载当前图片（懒加载）
+    loadImage(index);
     
     updateProgress();
     updateNavButtons();

@@ -145,7 +145,10 @@
     <div class="container">
         <h1>📊 产品统计</h1>
         
-        <button class="refresh-btn" onclick="loadStatistics()">🔄 刷新统计</button>
+        <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+            <button class="refresh-btn" onclick="loadStatistics()">🔄 刷新统计</button>
+            <button class="refresh-btn" onclick="exportData()" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">📥 导出数据</button>
+        </div>
         
         <div id="loading" class="loading">正在加载统计数据...</div>
         
@@ -220,6 +223,37 @@
                     <td><span class="count-badge">${item.count} 次</span></td>
                 </tr>
             `).join('');
+        }
+
+        // 导出数据
+        async function exportData() {
+            try {
+                const API_BASE_URL = window.location.origin;
+                const response = await fetch(`${API_BASE_URL}/api/export`);
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || '导出失败');
+                }
+                
+                const data = await response.json();
+                
+                // 创建下载链接
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `questionnaire-export-${Date.now()}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                alert('✅ 数据导出成功！文件已下载到您的下载文件夹。');
+            } catch (error) {
+                console.error('导出失败:', error);
+                alert('❌ 导出失败：' + error.message);
+            }
         }
 
         // 页面加载时自动加载统计
