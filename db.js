@@ -32,23 +32,47 @@ async function connectDB() {
     }
 
     if (!MONGODB_URI) {
-        console.warn('警告: MONGODB_URI 未设置，将使用文件系统存储（仅本地开发）');
+        console.warn('⚠️ 警告: MONGODB_URI 未设置，将使用文件系统存储（仅本地开发）');
+        console.warn('   在Zeabur部署时，请确保在环境变量中配置MONGODB_URI');
         return null;
     }
 
     try {
+        console.log('🔌 正在连接MongoDB...');
+        console.log('   连接字符串长度:', MONGODB_URI.length);
+        console.log('   数据库名称:', DB_NAME);
+        
         client = new MongoClient(MONGODB_URI, {
-            serverSelectionTimeoutMS: 5000, // 5秒超时
-            connectTimeoutMS: 10000, // 10秒连接超时
+            serverSelectionTimeoutMS: 10000, // 10秒超时（Zeabur可能需要更长时间）
+            connectTimeoutMS: 15000, // 15秒连接超时
+            maxPoolSize: 10, // 连接池大小
+            minPoolSize: 1,
         });
+        
         await client.connect();
         db = client.db(DB_NAME);
+        
+        // 验证连接
+        await db.admin().ping();
         console.log('✅ MongoDB 连接成功');
+        console.log('   数据库:', DB_NAME);
         return db;
     } catch (error) {
-        console.error('❌ MongoDB 连接失败:', error.message);
+        console.error('❌ MongoDB 连接失败:');
+        console.error('   错误消息:', error.message);
+        console.error('   错误代码:', error.code);
+        if (error.stack) {
+            console.error('   错误堆栈:', error.stack);
+        }
         db = null;
-        client = null;
+        if (client) {
+            try {
+                await client.close();
+            } catch (e) {
+                // 忽略关闭错误
+            }
+            client = null;
+        }
         return null;
     }
 }

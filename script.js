@@ -135,7 +135,7 @@ function createProductCard(item, index) {
     };
     
     // 使用 data-src 存储图片路径，实现懒加载
-    // 只对第一张图片立即加载
+    // 只对第一张图片立即加载，其他图片延迟加载
     if (index === 0) {
         img.src = imageUrl;
         img.dataset.loaded = 'false';
@@ -144,6 +144,21 @@ function createProductCard(item, index) {
         img.dataset.fallback = fallbackUrl;
         img.dataset.loaded = 'false';
         loadingPlaceholder.style.display = 'none'; // 未加载的图片先隐藏占位符
+    }
+    
+    // 预加载前两张图片（提高初始加载速度）
+    if (index === 0) {
+        // 第一张立即加载，同时预加载第二张
+        setTimeout(() => {
+            if (productImages.length > 1) {
+                preloadImage(1);
+            }
+        }, 500);
+    } else if (index === 1) {
+        // 第二张也预加载
+        setTimeout(() => {
+            preloadImage(1);
+        }, 1000);
     }
     
     // 图片加载完成事件（统一处理所有图片）
@@ -155,9 +170,18 @@ function createProductCard(item, index) {
         }
         // 淡入动画
         this.style.opacity = '0';
-        setTimeout(() => {
+        requestAnimationFrame(() => {
+            this.style.transition = 'opacity 0.3s ease';
             this.style.opacity = '1';
-        }, 10);
+        });
+    });
+    
+    // 图片加载错误事件
+    img.addEventListener('error', function() {
+        const placeholder = this.parentElement.querySelector('.image-loading');
+        if (placeholder) {
+            placeholder.innerHTML = '<div class="image-error">图片加载失败<br><button onclick="location.reload()" style="margin-top:10px;padding:8px 16px;background:#667eea;color:white;border:none;border-radius:4px;cursor:pointer;">重试</button></div>';
+        }
     });
     
     // 如果图片已经缓存（complete），立即触发加载完成
@@ -290,11 +314,21 @@ async function updateHeartCount(productIndex, increment) {
             
             const result = await response.json();
             
-            if (result.success && result.count !== undefined) {
-                // 使用服务器返回的最新数量（确保数据一致性）
+            // 如果服务器返回了count值（即使success为false），也使用它
+            // 这样可以避免数据重置，即使更新失败也能保持当前值
+            if (result.count !== undefined) {
+                // 使用服务器返回的数量（确保数据一致性）
                 updateHeartCountDisplay(productIndex, result.count);
-                console.log(`✅ 产品 ${productId} 爱心数量已保存到服务器: ${result.count}`);
-                return; // 成功，退出重试循环
+                if (result.success) {
+                    console.log(`✅ 产品 ${productId} 爱心数量已保存到服务器: ${result.count}`);
+                } else {
+                    console.warn(`⚠️ 产品 ${productId} 更新失败，但使用服务器返回的值: ${result.count}`);
+                }
+                return; // 有count值，退出重试循环
+            } else if (result.success) {
+                // 成功但没有count值，保持本地更新
+                console.log(`✅ 产品 ${productId} 更新成功（使用本地值）`);
+                return;
             } else {
                 throw new Error(result.message || '服务器返回失败');
             }
@@ -359,14 +393,31 @@ async function loadHeartCountsFromServer() {
             console.log('本地heartCounts:', heartCounts);
         } else {
             console.warn('❌ 服务器返回的数据格式不正确:', result);
-            // 如果服务器返回失败，保持现有数据，不重置为2000
-            // 只有在heartCounts完全为空时才设置默认值
-            productImages.forEach((item, index) => {
-                if (heartCounts[index] === undefined) {
-                    heartCounts[index] = 2000;
-                }
-                // 如果已有数据，保持不变
-            });
+            // 如果服务器返回失败，但包含heartCounts字段，尝试使用它
+            if (result.heartCounts && typeof result.heartCounts === 'object') {
+                console.log('⚠️ 尝试使用服务器返回的heartCounts（即使success为false）');
+                productImages.forEach((item, index) => {
+                    const productId = item.id;
+                    if (result.heartCounts[productId] !== undefined) {
+                        heartCounts[index] = result.heartCounts[productId];
+                        const countDisplay = document.querySelector(`.heart-count[data-product-index="${index}"]`);
+                        if (countDisplay) {
+                            countDisplay.textContent = formatNumber(heartCounts[index]);
+                        }
+                    } else if (heartCounts[index] === undefined) {
+                        heartCounts[index] = 2000;
+                    }
+                });
+            } else {
+                // 如果服务器返回失败，保持现有数据，不重置为2000
+                // 只有在heartCounts完全为空时才设置默认值
+                productImages.forEach((item, index) => {
+                    if (heartCounts[index] === undefined) {
+                        heartCounts[index] = 2000;
+                    }
+                    // 如果已有数据，保持不变
+                });
+            }
         }
     } catch (error) {
         console.error('❌ 从服务器加载爱心数量失败:', error);
@@ -495,8 +546,96 @@ function selectProduct(productIndex) {
     updateNavButtons();
 }
 
-// 加载图片（懒加载）
-function loadImage(index) {
+// 图片加载重试机制
+function loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries = 3, retryCount = 0) {
+    return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+            if (retryCount < maxRetries) {
+                console.log(`图片加载超时，重试 ${retryCount + 1}/${maxRetries}: ${imageUrl}`);
+                loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries, retryCount + 1)
+                    .then(resolve)
+                    .catch(reject);
+            } else {
+                reject(new Error('图片加载失败：超过最大重试次数'));
+            }
+        }, 10000); // 10秒超时
+
+        const tempImg = new Image();
+        tempImg.onload = function() {
+            clearTimeout(timeout);
+            img.src = imageUrl;
+            img.dataset.loaded = 'true';
+            resolve();
+        };
+        tempImg.onerror = function() {
+            clearTimeout(timeout);
+            // 如果是 WebP 且还有回退图片，尝试回退
+            if (imageUrl.includes('.webp') && fallbackUrl && retryCount === 0) {
+                console.log('WebP 加载失败，尝试回退到 JPG');
+                loadImageWithRetry(img, fallbackUrl, null, maxRetries, retryCount + 1)
+                    .then(resolve)
+                    .catch(reject);
+            } else if (retryCount < maxRetries) {
+                // 重试
+                setTimeout(() => {
+                    loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries, retryCount + 1)
+                        .then(resolve)
+                        .catch(reject);
+                }, 1000 * (retryCount + 1)); // 指数退避
+            } else {
+                reject(new Error('图片加载失败'));
+            }
+        };
+        tempImg.src = imageUrl;
+    });
+}
+
+// 预加载图片（静默加载，不显示占位符）
+function preloadImage(index) {
+    if (index < 0 || index >= productImages.length) return;
+    
+    const card = document.querySelector(`[data-index="${index}"]`);
+    if (!card) return;
+    
+    const img = card.querySelector('.product-image');
+    if (!img || img.dataset.loaded === 'true' || img.dataset.preloading === 'true') return;
+    
+    img.dataset.preloading = 'true';
+    const item = productImages[index];
+    const imageUrl = getImageUrl(item);
+    const fallbackUrl = item.fallback || imageUrl.replace('.webp', '.jpg');
+    
+    const preloadImg = new Image();
+    preloadImg.onload = function() {
+        img.dataset.preloaded = 'true';
+        img.dataset.preloading = 'false';
+        console.log(`✅ 图片 ${index + 1} 预加载完成`);
+    };
+    preloadImg.onerror = function() {
+        // 如果 WebP 失败，尝试 JPG
+        if (imageUrl.includes('.webp') && fallbackUrl) {
+            const fallbackImg = new Image();
+            fallbackImg.onload = function() {
+                img.dataset.preloaded = 'true';
+                img.dataset.preloadFallback = fallbackUrl;
+                img.dataset.preloading = 'false';
+                console.log(`✅ 图片 ${index + 1} 预加载完成（使用回退格式）`);
+            };
+            fallbackImg.onerror = function() {
+                img.dataset.preloading = 'false';
+                console.warn(`⚠️ 图片 ${index + 1} 预加载失败`);
+            };
+            fallbackImg.src = fallbackUrl;
+        } else {
+            img.dataset.preloading = 'false';
+            console.warn(`⚠️ 图片 ${index + 1} 预加载失败`);
+        }
+    };
+    preloadImg.src = imageUrl;
+}
+
+// 加载图片（懒加载，带重试机制）
+async function loadImage(index) {
     const card = document.querySelector(`[data-index="${index}"]`);
     if (!card) return;
     
@@ -512,42 +651,45 @@ function loadImage(index) {
         loadingPlaceholder.style.display = 'flex';
     }
     
-    // 如果图片还没有 src，从 data-src 加载
-    if (img.dataset.src && !img.src) {
-        // 如果已经预加载，直接使用
-        if (img.dataset.preloaded === 'true') {
-            img.src = img.dataset.src;
-        } else {
-            img.src = img.dataset.src;
+    const item = productImages[index];
+    const imageUrl = getImageUrl(item);
+    const fallbackUrl = item.fallback || imageUrl.replace('.webp', '.jpg');
+    
+    // 如果已经预加载，直接使用
+    if (img.dataset.preloaded === 'true') {
+        img.src = img.dataset.preloadFallback || imageUrl;
+        img.dataset.loaded = 'true';
+        if (loadingPlaceholder) {
+            loadingPlaceholder.style.display = 'none';
         }
-        
-        // 设置回退图片
-        if (img.dataset.fallback) {
-            img.onerror = function() {
-                if (this.src !== img.dataset.fallback && this.src.includes('.webp')) {
-                    console.log('WebP 加载失败，回退到 JPG');
-                    this.src = img.dataset.fallback;
-                }
-            };
+        return;
+    }
+    
+    // 使用重试机制加载图片
+    try {
+        await loadImageWithRetry(img, imageUrl, fallbackUrl);
+        if (loadingPlaceholder) {
+            loadingPlaceholder.style.display = 'none';
+        }
+    } catch (error) {
+        console.error(`❌ 图片 ${index + 1} 加载失败:`, error);
+        if (loadingPlaceholder) {
+            loadingPlaceholder.innerHTML = '<div class="image-error">加载失败<br><button onclick="location.reload()">重试</button></div>';
         }
     }
     
-    // 预加载相邻的图片（提前一张）
+    // 预加载相邻的图片（提前加载下一张和上一张）
     const nextIndex = index + 1;
+    const prevIndex = index - 1;
+    
+    // 预加载下一张
     if (nextIndex < productImages.length) {
-        const nextCard = document.querySelector(`[data-index="${nextIndex}"]`);
-        if (nextCard) {
-            const nextImg = nextCard.querySelector('.product-image');
-            if (nextImg && nextImg.dataset.src && nextImg.dataset.loaded !== 'true') {
-                // 预加载下一张图片（静默加载，不显示占位符）
-                const preloadImg = new Image();
-                preloadImg.src = nextImg.dataset.src;
-                preloadImg.onload = function() {
-                    // 预加载完成，但不立即设置到img元素，等用户切换时再设置
-                    nextImg.dataset.preloaded = 'true';
-                };
-            }
-        }
+        preloadImage(nextIndex);
+    }
+    
+    // 预加载上一张（如果还没加载）
+    if (prevIndex >= 0) {
+        preloadImage(prevIndex);
     }
 }
 

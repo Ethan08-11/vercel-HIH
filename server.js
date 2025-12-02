@@ -1,5 +1,5 @@
 // 加载环境变量（本地开发）
-if (require.main === module && !process.env.VERCEL) {
+if (require.main === module) {
     require('dotenv').config();
 }
 
@@ -114,23 +114,16 @@ app.get('/index.html', (req, res) => {
     res.sendFile('index.html', { root: __dirname });
 });
 
-// 检查是否在 Vercel 环境（只读文件系统）
-const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV;
-
-// 确保数据目录存在（仅在非 Vercel 环境）
+// 确保数据目录存在
 const dataDir = path.join(__dirname, 'data');
-if (!isVercel) {
-    if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir, { recursive: true });
-    }
+if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
 }
 
-// 确保产品分类目录存在（仅在非 Vercel 环境）
+// 确保产品分类目录存在
 const productsDir = path.join(dataDir, 'products');
-if (!isVercel) {
-    if (!fs.existsSync(productsDir)) {
-        fs.mkdirSync(productsDir, { recursive: true });
-    }
+if (!fs.existsSync(productsDir)) {
+    fs.mkdirSync(productsDir, { recursive: true });
 }
 
 // 提交问卷数据的API
@@ -188,15 +181,6 @@ app.post('/api/submit', async (req, res) => {
         }
 
         // 如果没有配置数据库，使用文件系统（仅本地开发）
-        if (isVercel) {
-            return res.json({
-                success: false,
-                message: '错误：Vercel 环境需要配置 MongoDB 数据库。请设置 MONGODB_URI 环境变量。',
-                submissionId: submissionId,
-                productsCount: selectedProducts ? selectedProducts.length : 0
-            });
-        }
-
         // 本地文件系统存储（仅用于开发）
         if (selectedProducts && Array.isArray(selectedProducts) && selectedProducts.length > 0) {
             selectedProducts.forEach(product => {
@@ -258,15 +242,6 @@ app.get('/api/submissions', async (req, res) => {
         }
         
         // 文件系统读取（仅本地开发）
-        if (isVercel) {
-            return res.json({
-                success: true,
-                count: 0,
-                submissions: [],
-                message: 'Vercel 环境需要配置 MongoDB 数据库'
-            });
-        }
-        
         if (!fs.existsSync(dataDir)) {
             return res.json({
                 success: true,
@@ -316,16 +291,6 @@ app.get('/api/products/:productId', async (req, res) => {
         }
         
         // 文件系统读取（仅本地开发）
-        if (isVercel) {
-            return res.json({
-                success: true,
-                productId: productId,
-                count: 0,
-                submissions: [],
-                message: 'Vercel 环境需要配置 MongoDB 数据库'
-            });
-        }
-        
         if (!fs.existsSync(productsDir)) {
             return res.json({
                 success: true,
@@ -419,14 +384,37 @@ app.get('/api/export', async (req, res) => {
 // 获取所有产品的爱心数量
 app.get('/api/heart-counts', async (req, res) => {
     try {
-        const useDatabase = !!process.env.MONGODB_URI;
+        const mongoUri = process.env.MONGODB_URI;
+        const useDatabase = !!mongoUri;
+        
+        console.log('🔍 检查数据库配置:');
+        console.log('  MONGODB_URI存在:', !!mongoUri);
+        console.log('  MONGODB_URI长度:', mongoUri ? mongoUri.length : 0);
+        console.log('  环境:', process.env.NODE_ENV || 'development');
         
         if (useDatabase) {
             // 确保数据库连接
-            await db.connectDB();
+            console.log('📡 尝试连接数据库...');
+            const dbConnection = await db.connectDB();
             
+            if (!dbConnection) {
+                console.error('❌ 数据库连接失败，返回默认值');
+                // 连接失败时返回默认值，但不重置
+                const allProductIds = [1, 2, 3, 4, 5, 6];
+                const defaultCounts = {};
+                allProductIds.forEach(productId => {
+                    defaultCounts[productId] = 2000;
+                });
+                return res.json({
+                    success: false,
+                    heartCounts: defaultCounts,
+                    message: '数据库连接失败，返回默认值'
+                });
+            }
+            
+            console.log('✅ 数据库连接成功，获取爱心数量...');
             const counts = await db.getHeartCounts();
-            console.log('从数据库获取爱心数量:', counts);
+            console.log('📊 从数据库获取爱心数量:', counts);
             
             // 确保所有产品都有数据（如果数据库中没有，返回默认值2000）
             const allProductIds = [1, 2, 3, 4, 5, 6];
@@ -437,10 +425,11 @@ app.get('/api/heart-counts', async (req, res) => {
                     result[productId] = counts[productId];
                 } else {
                     result[productId] = 2000;
-                    console.warn(`产品 ${productId} 在数据库中没有数据，返回默认值2000`);
+                    console.warn(`⚠️ 产品 ${productId} 在数据库中没有数据，返回默认值2000`);
                 }
             });
             
+            console.log('✅ 返回爱心数量:', result);
             return res.json({
                 success: true,
                 heartCounts: result
@@ -448,7 +437,7 @@ app.get('/api/heart-counts', async (req, res) => {
         }
         
         // 如果没有数据库，返回所有产品的默认值2000
-        console.warn('MongoDB未配置，返回默认爱心数量');
+        console.warn('⚠️ MongoDB未配置，返回默认爱心数量');
         const allProductIds = [1, 2, 3, 4, 5, 6];
         const defaultCounts = {};
         allProductIds.forEach(productId => {
@@ -461,7 +450,8 @@ app.get('/api/heart-counts', async (req, res) => {
             message: '数据库未配置，返回默认值'
         });
     } catch (error) {
-        console.error('获取爱心数量时出错:', error);
+        console.error('❌ 获取爱心数量时出错:', error);
+        console.error('错误堆栈:', error.stack);
         // 即使出错，也返回默认值，避免前端重置
         const allProductIds = [1, 2, 3, 4, 5, 6];
         const defaultCounts = {};
@@ -488,11 +478,25 @@ app.post('/api/heart-count', async (req, res) => {
             });
         }
         
-        const useDatabase = !!process.env.MONGODB_URI;
+        const mongoUri = process.env.MONGODB_URI;
+        const useDatabase = !!mongoUri;
+        
+        console.log(`📝 更新产品 ${productId} 爱心数量: ${increment > 0 ? '+' : ''}${increment}`);
+        console.log('  数据库配置:', useDatabase ? '已配置' : '未配置');
         
         if (useDatabase) {
             // 确保数据库连接
-            await db.connectDB();
+            console.log('📡 检查数据库连接...');
+            const dbConnection = await db.connectDB();
+            
+            if (!dbConnection) {
+                console.error('❌ 数据库连接失败');
+                return res.status(503).json({
+                    success: false,
+                    message: '数据库连接失败，无法保存数据',
+                    productId: parseInt(productId)
+                });
+            }
             
             // 获取用户信息（用于记录点击历史）
             const userInfo = {
@@ -503,6 +507,7 @@ app.post('/api/heart-count', async (req, res) => {
             
             // 更新爱心数量（同时记录点击历史）
             try {
+                console.log(`💾 开始更新数据库...`);
                 const newCount = await db.updateHeartCount(parseInt(productId), parseInt(increment), userInfo);
                 
                 if (newCount !== null && newCount !== undefined) {
@@ -516,8 +521,10 @@ app.post('/api/heart-count', async (req, res) => {
                 } else {
                     console.error(`❌ 产品 ${productId} 数据库更新返回null`);
                     // 即使更新失败，也返回当前值（从数据库查询）
+                    console.log('📊 尝试获取当前值...');
                     const currentCounts = await db.getHeartCounts();
                     const currentCount = currentCounts[parseInt(productId)] || 2000;
+                    console.log(`📊 当前值: ${currentCount}`);
                     return res.status(500).json({
                         success: false,
                         message: '数据库更新失败：返回值为null',
@@ -527,6 +534,8 @@ app.post('/api/heart-count', async (req, res) => {
                 }
             } catch (dbError) {
                 console.error(`❌ 产品 ${productId} 数据库更新异常:`, dbError);
+                console.error('错误详情:', dbError.message);
+                console.error('错误堆栈:', dbError.stack);
                 // 即使出错，也尝试返回当前值
                 try {
                     const currentCounts = await db.getHeartCounts();
@@ -538,6 +547,7 @@ app.post('/api/heart-count', async (req, res) => {
                         count: currentCount // 返回当前值，避免前端重置
                     });
                 } catch (e) {
+                    console.error('获取当前值也失败:', e);
                     return res.status(500).json({
                         success: false,
                         message: '数据库更新异常：' + dbError.message,
@@ -564,31 +574,52 @@ app.post('/api/heart-count', async (req, res) => {
 
 // 初始化数据库连接（在服务器启动时）
 async function initServer() {
+    console.log('\n🚀 开始初始化服务器...');
+    console.log('📋 环境检查:');
+    console.log('   NODE_ENV:', process.env.NODE_ENV || 'development');
+    console.log('   PORT:', process.env.PORT || 3000);
+    console.log('   MONGODB_URI:', process.env.MONGODB_URI ? `已配置 (长度: ${process.env.MONGODB_URI.length})` : '未配置');
+    
     // 尝试连接数据库
-    await db.connectDB();
+    console.log('\n📡 尝试连接数据库...');
+    const dbConnection = await db.connectDB();
+    
+    if (dbConnection) {
+        console.log('✅ 数据库连接成功');
+    } else {
+        console.error('❌ 数据库连接失败');
+        if (!process.env.MONGODB_URI) {
+            console.error('   原因: MONGODB_URI 环境变量未设置');
+            console.error('   解决方案: 在Zeabur环境变量中配置MONGODB_URI');
+        } else {
+            console.error('   原因: 可能是连接字符串错误或网络问题');
+            console.error('   建议: 检查MONGODB_URI格式和网络连接');
+        }
+    }
     
     // 初始化所有产品的爱心数量
-    if (process.env.MONGODB_URI) {
+    if (process.env.MONGODB_URI && dbConnection) {
         const productIds = [1, 2, 3, 4, 5, 6]; // 根据实际产品ID调整
         try {
-            // 确保数据库连接
-            const dbConnection = await db.connectDB();
-            if (dbConnection) {
-                await db.initHeartCounts(productIds);
-                console.log('✅ 爱心数量已初始化');
-                
-                // 验证初始化结果
-                const counts = await db.getHeartCounts();
-                console.log('初始化后的爱心数量:', counts);
-            } else {
-                console.error('❌ 数据库连接失败，无法初始化爱心数量');
-            }
+            console.log('\n📊 初始化产品爱心数量...');
+            await db.initHeartCounts(productIds);
+            console.log('✅ 爱心数量已初始化');
+            
+            // 验证初始化结果
+            const counts = await db.getHeartCounts();
+            console.log('📊 初始化后的爱心数量:', counts);
         } catch (error) {
             console.error('❌ 初始化爱心数量失败:', error);
             console.error('错误详情:', error.message);
+            console.error('错误堆栈:', error.stack);
         }
     } else {
-        console.warn('⚠️  MONGODB_URI未配置，无法初始化爱心数量');
+        if (!process.env.MONGODB_URI) {
+            console.warn('⚠️  MONGODB_URI未配置，无法初始化爱心数量');
+            console.warn('   在Zeabur部署时，请在环境变量中配置MONGODB_URI');
+        } else {
+            console.warn('⚠️  数据库连接失败，无法初始化爱心数量');
+        }
     }
     
     // 启动服务器
@@ -631,8 +662,6 @@ async function initServer() {
     });
 }
 
-// 为 Vercel 导出 handler（无服务器函数格式）
-// @vercel/node 可以直接导出 Express app
 module.exports = app;
 
 // 本地开发时启动服务器

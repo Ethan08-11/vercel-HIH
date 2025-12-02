@@ -10,8 +10,11 @@
     <!-- 资源提示：预连接和预加载优化 -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="dns-prefetch" href="/Picture">
-    <!-- 预加载第一张图片 -->
-    <link rel="preload" as="image" href="/Picture/1.jpg">
+    <!-- 预加载第一张图片（WebP优先，JPG回退） -->
+    <link rel="preload" as="image" href="/Picture/1.webp" type="image/webp">
+    <link rel="preload" as="image" href="/Picture/1.jpg" type="image/jpeg">
+    <!-- 预加载第二张图片（提高初始加载速度） -->
+    <link rel="preload" as="image" href="/Picture/2.webp" type="image/webp">
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
