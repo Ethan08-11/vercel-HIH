@@ -422,6 +422,9 @@ app.get('/api/heart-counts', async (req, res) => {
         const useDatabase = !!process.env.MONGODB_URI;
         
         if (useDatabase) {
+            // 确保数据库连接
+            await db.connectDB();
+            
             const counts = await db.getHeartCounts();
             console.log('从数据库获取爱心数量:', counts);
             
@@ -429,7 +432,13 @@ app.get('/api/heart-counts', async (req, res) => {
             const allProductIds = [1, 2, 3, 4, 5, 6];
             const result = {};
             allProductIds.forEach(productId => {
-                result[productId] = counts[productId] !== undefined ? counts[productId] : 2000;
+                // 如果数据库中有数据，使用数据库数据；否则使用2000
+                if (counts[productId] !== undefined && counts[productId] !== null) {
+                    result[productId] = counts[productId];
+                } else {
+                    result[productId] = 2000;
+                    console.warn(`产品 ${productId} 在数据库中没有数据，返回默认值2000`);
+                }
             });
             
             return res.json({
@@ -453,10 +462,16 @@ app.get('/api/heart-counts', async (req, res) => {
         });
     } catch (error) {
         console.error('获取爱心数量时出错:', error);
+        // 即使出错，也返回默认值，避免前端重置
+        const allProductIds = [1, 2, 3, 4, 5, 6];
+        const defaultCounts = {};
+        allProductIds.forEach(productId => {
+            defaultCounts[productId] = 2000;
+        });
         res.status(500).json({
             success: false,
             message: '服务器错误：' + error.message,
-            heartCounts: {}
+            heartCounts: defaultCounts // 返回默认值而不是空对象
         });
     }
 });
@@ -476,6 +491,9 @@ app.post('/api/heart-count', async (req, res) => {
         const useDatabase = !!process.env.MONGODB_URI;
         
         if (useDatabase) {
+            // 确保数据库连接
+            await db.connectDB();
+            
             // 获取用户信息（用于记录点击历史）
             const userInfo = {
                 userAgent: req.headers['user-agent'] || '',
@@ -497,19 +515,35 @@ app.post('/api/heart-count', async (req, res) => {
                     });
                 } else {
                     console.error(`❌ 产品 ${productId} 数据库更新返回null`);
+                    // 即使更新失败，也返回当前值（从数据库查询）
+                    const currentCounts = await db.getHeartCounts();
+                    const currentCount = currentCounts[parseInt(productId)] || 2000;
                     return res.status(500).json({
                         success: false,
                         message: '数据库更新失败：返回值为null',
-                        productId: parseInt(productId)
+                        productId: parseInt(productId),
+                        count: currentCount // 返回当前值，避免前端重置
                     });
                 }
             } catch (dbError) {
                 console.error(`❌ 产品 ${productId} 数据库更新异常:`, dbError);
-                return res.status(500).json({
-                    success: false,
-                    message: '数据库更新异常：' + dbError.message,
-                    productId: parseInt(productId)
-                });
+                // 即使出错，也尝试返回当前值
+                try {
+                    const currentCounts = await db.getHeartCounts();
+                    const currentCount = currentCounts[parseInt(productId)] || 2000;
+                    return res.status(500).json({
+                        success: false,
+                        message: '数据库更新异常：' + dbError.message,
+                        productId: parseInt(productId),
+                        count: currentCount // 返回当前值，避免前端重置
+                    });
+                } catch (e) {
+                    return res.status(500).json({
+                        success: false,
+                        message: '数据库更新异常：' + dbError.message,
+                        productId: parseInt(productId)
+                    });
+                }
             }
         }
         
@@ -537,14 +571,21 @@ async function initServer() {
     if (process.env.MONGODB_URI) {
         const productIds = [1, 2, 3, 4, 5, 6]; // 根据实际产品ID调整
         try {
-            await db.initHeartCounts(productIds);
-            console.log('✅ 爱心数量已初始化');
-            
-            // 验证初始化结果
-            const counts = await db.getHeartCounts();
-            console.log('初始化后的爱心数量:', counts);
+            // 确保数据库连接
+            const dbConnection = await db.connectDB();
+            if (dbConnection) {
+                await db.initHeartCounts(productIds);
+                console.log('✅ 爱心数量已初始化');
+                
+                // 验证初始化结果
+                const counts = await db.getHeartCounts();
+                console.log('初始化后的爱心数量:', counts);
+            } else {
+                console.error('❌ 数据库连接失败，无法初始化爱心数量');
+            }
         } catch (error) {
             console.error('❌ 初始化爱心数量失败:', error);
+            console.error('错误详情:', error.message);
         }
     } else {
         console.warn('⚠️  MONGODB_URI未配置，无法初始化爱心数量');

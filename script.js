@@ -359,19 +359,26 @@ async function loadHeartCountsFromServer() {
             console.log('本地heartCounts:', heartCounts);
         } else {
             console.warn('❌ 服务器返回的数据格式不正确:', result);
-            // 如果服务器返回失败，确保所有产品都有默认值
+            // 如果服务器返回失败，保持现有数据，不重置为2000
+            // 只有在heartCounts完全为空时才设置默认值
             productImages.forEach((item, index) => {
-                heartCounts[index] = 2000;
+                if (heartCounts[index] === undefined) {
+                    heartCounts[index] = 2000;
+                }
+                // 如果已有数据，保持不变
             });
         }
     } catch (error) {
         console.error('❌ 从服务器加载爱心数量失败:', error);
-        // 如果失败，确保所有产品都有默认值
+        // 如果失败，保持现有数据，不重置
+        // 只有在完全没有数据时才设置默认值
         productImages.forEach((item, index) => {
             if (heartCounts[index] === undefined) {
                 heartCounts[index] = 2000;
             }
+            // 如果已有数据，保持不变，不重置为2000
         });
+        console.warn('⚠️ 数据加载失败，保持现有数据:', heartCounts);
     }
 }
 

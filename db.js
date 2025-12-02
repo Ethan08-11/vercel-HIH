@@ -8,10 +8,27 @@ const COLLECTION_NAME = 'submissions';
 let client = null;
 let db = null;
 
-// 连接到 MongoDB
+// 连接到 MongoDB（带重连机制）
 async function connectDB() {
-    if (db) {
-        return db;
+    // 如果已有连接，先检查连接是否有效
+    if (db && client) {
+        try {
+            // 执行一个简单的操作来检查连接是否有效
+            await client.db('admin').command({ ping: 1 });
+            return db;
+        } catch (error) {
+            // 连接已断开，重置变量
+            console.warn('⚠️ 数据库连接已断开，重新连接...');
+            db = null;
+            if (client) {
+                try {
+                    await client.close();
+                } catch (e) {
+                    // 忽略关闭错误
+                }
+                client = null;
+            }
+        }
     }
 
     if (!MONGODB_URI) {
@@ -20,13 +37,18 @@ async function connectDB() {
     }
 
     try {
-        client = new MongoClient(MONGODB_URI);
+        client = new MongoClient(MONGODB_URI, {
+            serverSelectionTimeoutMS: 5000, // 5秒超时
+            connectTimeoutMS: 10000, // 10秒连接超时
+        });
         await client.connect();
         db = client.db(DB_NAME);
         console.log('✅ MongoDB 连接成功');
         return db;
     } catch (error) {
         console.error('❌ MongoDB 连接失败:', error.message);
+        db = null;
+        client = null;
         return null;
     }
 }
@@ -101,10 +123,16 @@ async function getProductSubmissions(productId) {
 
 // 获取所有产品的爱心数量
 async function getHeartCounts() {
-    const database = await connectDB();
+    // 确保数据库连接
+    let database = await connectDB();
     if (!database) {
-        console.warn('数据库未连接，返回空对象');
-        return {};
+        // 如果连接失败，尝试重新连接一次
+        console.warn('⚠️ 数据库连接失败，尝试重新连接...');
+        database = await connectDB();
+        if (!database) {
+            console.warn('数据库未连接，返回空对象');
+            return {};
+        }
     }
 
     try {
@@ -124,10 +152,16 @@ async function getHeartCounts() {
 
 // 更新产品的爱心数量（同时记录点击历史）
 async function updateHeartCount(productId, increment, userInfo = {}) {
-    const database = await connectDB();
+    // 确保数据库连接
+    let database = await connectDB();
     if (!database) {
-        console.error('数据库未连接，无法更新爱心数量');
-        return null;
+        // 如果连接失败，尝试重新连接一次
+        console.warn('⚠️ 数据库连接失败，尝试重新连接...');
+        database = await connectDB();
+        if (!database) {
+            console.error('❌ 数据库未连接，无法更新爱心数量');
+            return null;
+        }
     }
 
     try {
@@ -214,8 +248,10 @@ async function updateHeartCount(productId, increment, userInfo = {}) {
 
 // 初始化所有产品的爱心数量（如果不存在）
 async function initHeartCounts(productIds) {
-    const database = await connectDB();
+    // 确保数据库连接
+    let database = await connectDB();
     if (!database) {
+        console.warn('⚠️ 数据库未连接，无法初始化爱心数量');
         return;
     }
 
@@ -223,21 +259,25 @@ async function initHeartCounts(productIds) {
         const collection = database.collection('heartCounts');
         
         for (const productId of productIds) {
-            await collection.updateOne(
-                { productId: productId },
-                { 
-                    $setOnInsert: { 
-                        productId: productId,
-                        count: 2000,
-                        createdAt: new Date(),
-                        updatedAt: new Date()
-                    }
-                },
-                { upsert: true }
-            );
+            // 先检查是否已存在，避免覆盖已有数据
+            const existing = await collection.findOne({ productId: productId });
+            if (!existing) {
+                // 只有不存在时才创建
+                await collection.insertOne({
+                    productId: productId,
+                    count: 2000,
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                });
+                console.log(`✅ 产品 ${productId} 爱心数量已初始化: 2000`);
+            } else {
+                console.log(`ℹ️ 产品 ${productId} 爱心数量已存在: ${existing.count}`);
+            }
         }
+        console.log('✅ 所有产品爱心数量初始化完成');
     } catch (error) {
-        console.error('初始化爱心数量时出错:', error);
+        console.error('❌ 初始化爱心数量时出错:', error);
+        throw error; // 抛出错误，让调用者知道初始化失败
     }
 }
 
