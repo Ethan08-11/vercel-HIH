@@ -1,37 +1,61 @@
 // 产品图片数据 - 使用本地图片
+// 支持 WebP 格式，自动回退到 JPG
 // 使用绝对路径确保在 Vercel 上正确加载
 const productImages = [
     {
         id: 1,
-        image: '/Picture/1.jpg',
+        image: '/Picture/1.webp', // WebP 格式，自动回退到 JPG
+        fallback: '/Picture/1.jpg',
         name: '玩偶'
     },
     {
         id: 2,
-        image: '/Picture/2.jpg',
+        image: '/Picture/2.webp',
+        fallback: '/Picture/2.jpg',
         name: '蓝色单肩包'
     },
     {
         id: 3,
-        image: '/Picture/3.jpg',
+        image: '/Picture/3.webp',
+        fallback: '/Picture/3.jpg',
         name: '白色单肩包'
     },
     {
         id: 4,
-        image: '/Picture/4.jpg',
+        image: '/Picture/4.webp',
+        fallback: '/Picture/4.jpg',
         name: '镜子'
     },
     {
         id: 5,
-        image: '/Picture/5.jpg',
+        image: '/Picture/5.webp',
+        fallback: '/Picture/5.jpg',
         name: '石膏香片'
     },
     {
         id: 6,
-        image: '/Picture/6.jpg',
+        image: '/Picture/6.webp',
+        fallback: '/Picture/6.jpg',
         name: '充电宝'
     }
 ];
+
+// 检测浏览器是否支持 WebP
+function supportsWebP() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    return canvas.toDataURL('image/webp').indexOf('data:image/webp') === 0;
+}
+
+// 获取图片 URL（支持 WebP 回退）
+function getImageUrl(item) {
+    // 如果浏览器支持 WebP，使用 WebP，否则使用 JPG
+    if (supportsWebP() && item.image) {
+        return item.image;
+    }
+    return item.fallback || item.image.replace('.webp', '.jpg');
+}
 
 // 存储用户答案
 let answers = {};
@@ -79,13 +103,27 @@ function createProductCard(item, index) {
     img.alt = item.name;
     img.loading = 'lazy'; // 浏览器原生懒加载
     
+    // 获取图片 URL（支持 WebP 回退）
+    const imageUrl = getImageUrl(item);
+    const fallbackUrl = item.fallback || imageUrl.replace('.webp', '.jpg');
+    
+    // 设置回退图片
+    img.onerror = function() {
+        // 如果 WebP 加载失败，尝试加载 JPG
+        if (this.src !== fallbackUrl && this.src.includes('.webp')) {
+            console.log(`WebP 加载失败，回退到 JPG: ${item.name}`);
+            this.src = fallbackUrl;
+        }
+    };
+    
     // 使用 data-src 存储图片路径，实现懒加载
     // 只对第一张图片立即加载
     if (index === 0) {
-        img.src = item.image;
+        img.src = imageUrl;
         img.dataset.loaded = 'false';
     } else {
-        img.dataset.src = item.image;
+        img.dataset.src = imageUrl;
+        img.dataset.fallback = fallbackUrl;
         img.dataset.loaded = 'false';
         loadingPlaceholder.style.display = 'none'; // 未加载的图片先隐藏占位符
     }
@@ -263,6 +301,16 @@ function loadImage(index) {
             img.src = img.dataset.src;
         } else {
             img.src = img.dataset.src;
+        }
+        
+        // 设置回退图片
+        if (img.dataset.fallback) {
+            img.onerror = function() {
+                if (this.src !== img.dataset.fallback && this.src.includes('.webp')) {
+                    console.log('WebP 加载失败，回退到 JPG');
+                    this.src = img.dataset.fallback;
+                }
+            };
         }
     }
     
