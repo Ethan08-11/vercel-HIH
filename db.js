@@ -176,16 +176,24 @@ async function updateHeartCount(productId, increment) {
     try {
         const collection = database.collection('heartCounts');
         
+        // 先检查是否存在
+        const existing = await collection.findOne({ productId: productId });
+        
+        if (!existing) {
+            // 如果不存在，先创建初始记录（2000），然后再增加
+            await collection.insertOne({
+                productId: productId,
+                count: 2000,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            });
+        }
+        
         // 使用 upsert 操作，如果不存在则创建，存在则更新
         const result = await collection.findOneAndUpdate(
             { productId: productId },
             { 
                 $inc: { count: increment },
-                $setOnInsert: { 
-                    productId: productId,
-                    count: 2000 + increment, // 如果不存在，初始值为2000 + increment
-                    updatedAt: new Date()
-                },
                 $set: { updatedAt: new Date() }
             },
             { 
@@ -194,7 +202,9 @@ async function updateHeartCount(productId, increment) {
             }
         );
         
-        return result.value ? result.value.count : null;
+        const newCount = result.value ? result.value.count : null;
+        console.log(`产品 ${productId} 爱心数量已更新: ${increment > 0 ? '+' : ''}${increment}, 新数量: ${newCount}`);
+        return newCount;
     } catch (error) {
         console.error('更新爱心数量时出错:', error);
         throw error;

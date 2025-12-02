@@ -503,13 +503,15 @@ app.get('/api/heart-counts', async (req, res) => {
         
         if (useDatabase) {
             const counts = await db.getHeartCounts();
+            console.log('从数据库获取爱心数量:', counts);
             return res.json({
                 success: true,
                 heartCounts: counts
             });
         }
         
-        // 如果没有数据库，返回空对象
+        // 如果没有数据库，返回空对象（前端会使用默认值2000）
+        console.warn('MongoDB未配置，返回空爱心数量');
         res.json({
             success: true,
             heartCounts: {}
@@ -518,7 +520,8 @@ app.get('/api/heart-counts', async (req, res) => {
         console.error('获取爱心数量时出错:', error);
         res.status(500).json({
             success: false,
-            message: '服务器错误：' + error.message
+            message: '服务器错误：' + error.message,
+            heartCounts: {}
         });
     }
 });
