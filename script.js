@@ -62,9 +62,11 @@ let answers = {};
 let currentIndex = 0;
 let autoPlayTimer = null; // 自动轮播定时器
 const AUTO_PLAY_INTERVAL = 5000; // 自动轮播间隔（5秒）
+let heartCounts = {}; // 每个产品的爱心数量，初始值为2000
+let productJumpTimers = {}; // 存储每个产品的跳转定时器
 
 // 初始化问卷
-function initQuestionnaire() {
+async function initQuestionnaire() {
     const carouselWrapper = document.getElementById('carouselWrapper');
     
     // 创建所有产品卡片
@@ -73,11 +75,18 @@ function initQuestionnaire() {
         carouselWrapper.appendChild(card);
     });
     
+    // 从服务器加载爱心数量
+    await loadHeartCountsFromServer();
+    
     // 显示第一个产品
     showProduct(0);
     updateProgress();
     updateNavButtons();
-    checkAllAnswered(); // 初始化时检查提交按钮状态
+    
+    // 定期从服务器同步爱心数量（每10秒）
+    setInterval(async () => {
+        await loadHeartCountsFromServer();
+    }, 10000);
 }
 
 // 创建产品卡片
@@ -155,70 +164,32 @@ function createProductCard(item, index) {
         this.style.display = 'none';
     };
     
-    // 选中标记
+    // 选中标记 - 爱心图标和数量
     const selectedMark = document.createElement('div');
     selectedMark.className = 'selected-mark';
-    selectedMark.innerHTML = '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>';
+    
+    const heartIcon = document.createElement('div');
+    heartIcon.className = 'heart-icon';
+    heartIcon.innerHTML = '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path class="heart-path" d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" fill="white"/></svg>';
+    
+    // 初始化该产品的爱心数量
+    if (!heartCounts[index]) {
+        heartCounts[index] = 2000;
+    }
+    
+    const heartCountDisplay = document.createElement('div');
+    heartCountDisplay.className = 'heart-count';
+    heartCountDisplay.id = `heartCount-${index}`;
+    heartCountDisplay.dataset.productIndex = index;
+    heartCountDisplay.textContent = formatNumber(heartCounts[index]);
+    
+    selectedMark.appendChild(heartIcon);
+    selectedMark.appendChild(heartCountDisplay);
     
     imageContainer.appendChild(loadingPlaceholder);
     imageContainer.appendChild(img);
     imageContainer.appendChild(selectedMark);
     card.appendChild(imageContainer);
-    
-    // 添加文字说明
-    const textContainer = document.createElement('div');
-    textContainer.className = 'product-text-container';
-    
-    // 文字内容区域
-    const textContent = document.createElement('div');
-    textContent.className = 'product-text-content';
-    
-    const chineseText = document.createElement('div');
-    chineseText.className = 'product-text-chinese';
-    chineseText.textContent = '这是我们的文创样板之一哦！想知道哪种款式、设计最合你的心意？';
-    
-    const englishText = document.createElement('div');
-    englishText.className = 'product-text-english';
-    englishText.textContent = 'This is one of our cultural and creative samples! We\'d like to know which style and design appeals to you most?';
-    
-    // 添加提示文字
-    const hintChineseText = document.createElement('div');
-    hintChineseText.className = 'product-text-hint-chinese';
-    hintChineseText.textContent = '请点击图片选择你喜欢的产品并提交。';
-    
-    const hintEnglishText = document.createElement('div');
-    hintEnglishText.className = 'product-text-hint-english';
-    hintEnglishText.textContent = 'Please click on the image to select your favorite product and submit.';
-    
-    textContent.appendChild(chineseText);
-    textContent.appendChild(englishText);
-    textContent.appendChild(hintChineseText);
-    textContent.appendChild(hintEnglishText);
-    
-    textContainer.appendChild(textContent);
-    
-    // 如果是最后一张图片，添加提交按钮
-    if (index === productImages.length - 1) {
-        const submitBtnContainer = document.createElement('div');
-        submitBtnContainer.className = 'product-submit-container';
-        
-        const submitBtn = document.createElement('button');
-        submitBtn.className = 'product-submit-btn';
-        submitBtn.id = 'productSubmitBtn';
-        submitBtn.onclick = submitQuestionnaire;
-        submitBtn.innerHTML = `
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                <polyline points="22 4 12 14.01 9 11.01"></polyline>
-            </svg>
-            <span>提交</span>
-        `;
-        
-        submitBtnContainer.appendChild(submitBtn);
-        textContainer.appendChild(submitBtnContainer);
-    }
-    
-    card.appendChild(textContainer);
     
     return card;
 }
@@ -247,6 +218,169 @@ function stopAutoPlay() {
     }
 }
 
+// 格式化数字（添加千位分隔符）
+function formatNumber(num) {
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+// 更新指定产品的爱心数量显示（本地更新）
+function updateHeartCountDisplay(productIndex, count) {
+    heartCounts[productIndex] = count;
+    
+    // 更新该产品的爱心数量显示
+    const countDisplay = document.querySelector(`.heart-count[data-product-index="${productIndex}"]`);
+    if (countDisplay) {
+        const newText = formatNumber(heartCounts[productIndex]);
+        
+        // 添加更新动画
+        countDisplay.classList.add('updating');
+        countDisplay.textContent = newText;
+        
+        // 移除动画类
+        setTimeout(() => {
+            countDisplay.classList.remove('updating');
+        }, 300);
+    }
+}
+
+// 更新指定产品的爱心数量（同步到服务器）
+async function updateHeartCount(productIndex, increment) {
+    // 初始化该产品的爱心数量（如果不存在）
+    if (!heartCounts[productIndex]) {
+        heartCounts[productIndex] = 2000;
+    }
+    
+    // 先本地更新（乐观更新）
+    const newCount = heartCounts[productIndex] + increment;
+    updateHeartCountDisplay(productIndex, newCount);
+    
+    // 同步到服务器
+    try {
+        const API_BASE_URL = window.API_BASE_URL || window.location.origin;
+        const productId = productImages[productIndex].id;
+        
+        const response = await fetch(`${API_BASE_URL}/api/heart-count`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                productId: productId,
+                increment: increment
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success && result.count !== undefined) {
+            // 使用服务器返回的最新数量
+            updateHeartCountDisplay(productIndex, result.count);
+        }
+    } catch (error) {
+        console.error('更新爱心数量到服务器失败:', error);
+        // 如果失败，保持本地更新
+    }
+}
+
+// 从服务器获取所有产品的爱心数量
+async function loadHeartCountsFromServer() {
+    try {
+        const API_BASE_URL = window.API_BASE_URL || window.location.origin;
+        const response = await fetch(`${API_BASE_URL}/api/heart-counts`);
+        const result = await response.json();
+        
+        if (result.success && result.heartCounts) {
+            // 更新所有产品的爱心数量
+            productImages.forEach((item, index) => {
+                const productId = item.id;
+                if (result.heartCounts[productId] !== undefined) {
+                    heartCounts[index] = result.heartCounts[productId];
+                } else {
+                    // 如果服务器没有该产品的数据，使用默认值
+                    if (!heartCounts[index]) {
+                        heartCounts[index] = 2000;
+                    }
+                }
+                
+                // 更新显示
+                const countDisplay = document.querySelector(`.heart-count[data-product-index="${index}"]`);
+                if (countDisplay) {
+                    countDisplay.textContent = formatNumber(heartCounts[index]);
+                }
+            });
+        }
+    } catch (error) {
+        console.error('从服务器加载爱心数量失败:', error);
+        // 如果失败，使用默认值
+        productImages.forEach((item, index) => {
+            if (!heartCounts[index]) {
+                heartCounts[index] = 2000;
+            }
+        });
+    }
+}
+
+// 创建飘动的爱心动画（类似抖音点赞效果）
+function createFloatingHeart(container, productIndex) {
+    const selectedMark = container.querySelector('.selected-mark');
+    if (!selectedMark) return;
+    
+    // 获取爱心图标的位置
+    const markRect = selectedMark.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    
+    // 计算相对于容器的位置
+    const startX = markRect.left - containerRect.left + markRect.width / 2;
+    const startY = markRect.top - containerRect.top + markRect.height / 2;
+    
+    // 创建1-5个重影爱心（控制在5个以内）
+    const floatingHeartCount = 1 + Math.floor(Math.random() * 5); // 1-5个
+    
+    for (let i = 0; i < floatingHeartCount; i++) {
+        setTimeout(() => {
+            const floatingHeart = document.createElement('div');
+            floatingHeart.className = 'floating-heart';
+            
+            // 随机偏移，让爱心不完全重叠，并添加左右随机偏移
+            const offsetX = (Math.random() - 0.5) * 40;
+            const offsetY = (Math.random() - 0.5) * 15;
+            
+            // 随机左右飘动方向（-1 或 1）
+            const driftDirection = Math.random() > 0.5 ? 1 : -1;
+            const driftAmount = (Math.random() * 30 + 20) * driftDirection;
+            
+            floatingHeart.style.left = `${startX + offsetX}px`;
+            floatingHeart.style.top = `${startY + offsetY}px`;
+            floatingHeart.style.setProperty('--drift-x', `${driftAmount}px`);
+            
+            // 随机大小变化
+            const scaleVariation = 0.8 + Math.random() * 0.4; // 0.8-1.2
+            floatingHeart.style.setProperty('--scale-end', scaleVariation);
+            
+            // 创建SVG爱心
+            floatingHeart.innerHTML = `
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="#e74c3c" stroke="#e74c3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                </svg>
+            `;
+            
+            container.appendChild(floatingHeart);
+            
+            // 触发动画
+            requestAnimationFrame(() => {
+                floatingHeart.classList.add('animate');
+            });
+            
+            // 动画结束后移除元素
+            setTimeout(() => {
+                if (floatingHeart.parentNode) {
+                    floatingHeart.parentNode.removeChild(floatingHeart);
+                }
+            }, 2000);
+        }, i * 80); // 每个爱心延迟80ms，形成重影效果
+    }
+}
+
 // 选择产品
 function selectProduct(productIndex) {
     stopAutoPlay(); // 用户选择产品时停止自动轮播
@@ -261,20 +395,42 @@ function selectProduct(productIndex) {
         // 取消选择
         imageContainer.classList.remove('selected');
         delete answers[productIndex];
+        
+        // 数量减1
+        updateHeartCount(productIndex, -1);
+        
+        // 清除该产品的跳转定时器
+        if (productJumpTimers[productIndex]) {
+            clearTimeout(productJumpTimers[productIndex]);
+            delete productJumpTimers[productIndex];
+        }
     } else {
         // 选中
         imageContainer.classList.add('selected');
         
-        // 自动跳转到下一个产品（延迟一下让用户看到选中效果）
-        setTimeout(() => {
+        // 更新该产品的爱心数量（每次点击只增加1）
+        updateHeartCount(productIndex, 1);
+        
+        // 创建飘动的爱心动画
+        createFloatingHeart(imageContainer, productIndex);
+        
+        // 清除之前的跳转定时器（如果存在）
+        if (productJumpTimers[productIndex]) {
+            clearTimeout(productJumpTimers[productIndex]);
+        }
+        
+        // 自动跳转到下一个产品（爱心动画结束后5秒再轮播）
+        // 动画持续时间2秒 + 等待5秒 = 总共7秒
+        productJumpTimers[productIndex] = setTimeout(() => {
             if (currentIndex === productIndex && currentIndex < productImages.length - 1) {
-                nextProduct();
+                nextQuestion();
             }
-        }, 500);
+            // 清除定时器引用
+            delete productJumpTimers[productIndex];
+        }, 7000); // 2000ms动画 + 5000ms等待 = 7000ms
     }
     
     updateNavButtons();
-    checkAllAnswered();
 }
 
 // 加载图片（懒加载）
@@ -335,6 +491,24 @@ function loadImage(index) {
 
 // 显示指定产品
 function showProduct(index) {
+    // 清除之前产品的选中状态（但保留爱心数量）
+    if (currentIndex !== undefined && currentIndex !== index) {
+        const previousCard = document.querySelector(`[data-index="${currentIndex}"]`);
+        if (previousCard) {
+            const previousImageContainer = previousCard.querySelector('.product-image-container');
+            if (previousImageContainer && previousImageContainer.classList.contains('selected')) {
+                // 移除选中状态，但保留爱心数量
+                previousImageContainer.classList.remove('selected');
+            }
+        }
+        
+        // 清除之前产品的跳转定时器
+        if (productJumpTimers[currentIndex]) {
+            clearTimeout(productJumpTimers[currentIndex]);
+            delete productJumpTimers[currentIndex];
+        }
+    }
+    
     currentIndex = index;
     const carouselWrapper = document.getElementById('carouselWrapper');
     const translateX = -index * 100;
@@ -345,9 +519,6 @@ function showProduct(index) {
     
     updateProgress();
     updateNavButtons();
-    
-    // 检查是否至少选择了一个产品（在最后一张图片时启用提交按钮）
-    checkAllAnswered();
     
     // 启动自动轮播
     startAutoPlay();
@@ -391,178 +562,6 @@ function updateNavButtons() {
     if (nextBtn) nextBtn.disabled = false;
 }
 
-// 检查是否至少选择了一个产品（在最后一张图片时）
-function checkAllAnswered() {
-    const hasSelected = Object.keys(answers).length > 0;
-    const submitBtn = document.getElementById('productSubmitBtn');
-    
-    // 只有在最后一张图片时才显示和启用提交按钮
-    if (submitBtn && currentIndex === productImages.length - 1) {
-        if (hasSelected) {
-            submitBtn.disabled = false;
-            submitBtn.classList.add('enabled');
-        } else {
-            submitBtn.disabled = true;
-            submitBtn.classList.remove('enabled');
-        }
-    }
-}
-
-// 提交问卷
-async function submitQuestionnaire() {
-    // 检查是否至少选择了一个产品
-    const hasSelected = Object.keys(answers).length > 0;
-    if (!hasSelected) {
-        alert('请至少选择一个产品后再提交！');
-        return;
-    }
-
-    // 构建提交数据
-    const selectedProducts = [];
-    productImages.forEach((item, index) => {
-        if (answers[index]) {
-            selectedProducts.push({
-                id: item.id,
-                name: item.name,
-                image: item.image
-            });
-        }
-    });
-
-    const submitData = {
-        answers: answers,
-        selectedProducts: selectedProducts,
-        timestamp: new Date().toISOString()
-    };
-
-    // 显示加载状态
-    const submitBtn = document.getElementById('productSubmitBtn');
-    if (submitBtn) {
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = '<span>提交中...</span>';
-    }
-
-    try {
-        // 获取API基础URL（支持环境变量）
-        const API_BASE_URL = window.API_BASE_URL || (window.location.origin);
-        
-        // 发送到后端服务器
-        const response = await fetch(`${API_BASE_URL}/api/submit`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(submitData)
-        });
-
-        const result = await response.json();
-
-        if (result.success) {
-            // 构建结果 - 显示所有选中的产品图片
-            let resultHTML = '<div class="result-grid">';
-            
-            selectedProducts.forEach((item) => {
-                resultHTML += `
-                    <div class="result-product">
-                        <img src="${item.image}" alt="${item.name}" class="result-image">
-                        <div class="result-product-name">${item.name}</div>
-                    </div>
-                `;
-            });
-            
-            resultHTML += '</div>';
-            resultHTML += `<div style="text-align: center; margin-top: 20px; color: #667eea; font-weight: 600;">${result.message}</div>`;
-            
-            // 显示结果弹窗
-            document.getElementById('resultContent').innerHTML = resultHTML;
-            document.getElementById('resultModal').classList.add('show');
-            
-            console.log('提交成功:', result);
-            
-            // 恢复提交按钮状态（在重置前先恢复，避免闪烁）
-            if (submitBtn) {
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = `
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                    </svg>
-                    <span>提交</span>
-                `;
-            }
-            
-            // 3秒后自动关闭弹窗并刷新页面状态
-            setTimeout(() => {
-                closeModal();
-                resetQuestionnaire();
-            }, 3000);
-        } else {
-            throw new Error(result.message || '提交失败');
-        }
-    } catch (error) {
-        console.error('提交错误:', error);
-        alert('提交失败：' + error.message + '\n请确保后端服务器正在运行。');
-        
-        // 恢复按钮状态
-        if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = `
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                </svg>
-                <span>提交</span>
-            `;
-        }
-    }
-}
-
-// 关闭弹窗
-function closeModal() {
-    document.getElementById('resultModal').classList.remove('show');
-}
-
-// 刷新页面状态
-function resetQuestionnaire() {
-    // 停止自动轮播
-    stopAutoPlay();
-    
-    // 清空所有答案
-    answers = {};
-    
-    // 重置所有产品的选中状态
-    productImages.forEach((item, index) => {
-        const card = document.querySelector(`[data-index="${index}"]`);
-        if (card) {
-            const imageContainer = card.querySelector('.product-image-container');
-            if (imageContainer) {
-                imageContainer.classList.remove('selected');
-            }
-        }
-    });
-    
-    // 重置进度条
-    document.getElementById('progressBar').style.width = '0%';
-    
-    // 回到第一张图片
-    showProduct(0);
-    
-    // 重置提交按钮状态
-    const submitBtn = document.getElementById('productSubmitBtn');
-    if (submitBtn) {
-        submitBtn.disabled = true;
-        submitBtn.classList.remove('enabled');
-        submitBtn.innerHTML = `
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                <polyline points="22 4 12 14.01 9 11.01"></polyline>
-            </svg>
-            <span>提交</span>
-        `;
-    }
-    
-    console.log('页面状态已重置');
-}
 
 // 键盘导航支持
 document.addEventListener('keydown', (e) => {

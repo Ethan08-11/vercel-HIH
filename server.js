@@ -496,10 +496,82 @@ app.get('/api/export', async (req, res) => {
     }
 });
 
+// 获取所有产品的爱心数量
+app.get('/api/heart-counts', async (req, res) => {
+    try {
+        const useDatabase = !!process.env.MONGODB_URI;
+        
+        if (useDatabase) {
+            const counts = await db.getHeartCounts();
+            return res.json({
+                success: true,
+                heartCounts: counts
+            });
+        }
+        
+        // 如果没有数据库，返回空对象
+        res.json({
+            success: true,
+            heartCounts: {}
+        });
+    } catch (error) {
+        console.error('获取爱心数量时出错:', error);
+        res.status(500).json({
+            success: false,
+            message: '服务器错误：' + error.message
+        });
+    }
+});
+
+// 更新产品的爱心数量
+app.post('/api/heart-count', async (req, res) => {
+    try {
+        const { productId, increment } = req.body;
+        
+        if (productId === undefined || increment === undefined) {
+            return res.status(400).json({
+                success: false,
+                message: '缺少必要参数：productId 和 increment'
+            });
+        }
+        
+        const useDatabase = !!process.env.MONGODB_URI;
+        
+        if (useDatabase) {
+            const newCount = await db.updateHeartCount(parseInt(productId), parseInt(increment));
+            return res.json({
+                success: true,
+                productId: parseInt(productId),
+                count: newCount
+            });
+        }
+        
+        // 如果没有数据库，返回成功但不保存
+        res.json({
+            success: true,
+            productId: parseInt(productId),
+            message: '数据库未配置，数量未保存'
+        });
+    } catch (error) {
+        console.error('更新爱心数量时出错:', error);
+        res.status(500).json({
+            success: false,
+            message: '服务器错误：' + error.message
+        });
+    }
+});
+
 // 初始化数据库连接（在服务器启动时）
 async function initServer() {
     // 尝试连接数据库
     await db.connectDB();
+    
+    // 初始化所有产品的爱心数量
+    if (process.env.MONGODB_URI) {
+        const productIds = [1, 2, 3, 4, 5, 6]; // 根据实际产品ID调整
+        await db.initHeartCounts(productIds);
+        console.log('✅ 爱心数量已初始化');
+    }
     
     // 启动服务器
     app.listen(PORT, '0.0.0.0', () => {
@@ -537,6 +609,8 @@ async function initServer() {
         console.log('  GET  /api/products/:productId - 获取指定产品的提交记录');
         console.log('  GET  /api/statistics - 获取所有产品的统计信息');
         console.log('  GET  /api/export - 导出所有数据为JSON文件');
+        console.log('  GET  /api/heart-counts - 获取所有产品的爱心数量');
+        console.log('  POST /api/heart-count - 更新产品的爱心数量');
     });
 }
 

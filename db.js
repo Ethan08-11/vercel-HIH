@@ -145,12 +145,100 @@ async function getStatistics() {
     }
 }
 
+// 获取所有产品的爱心数量
+async function getHeartCounts() {
+    const database = await connectDB();
+    if (!database) {
+        return {};
+    }
+
+    try {
+        const collection = database.collection('heartCounts');
+        const counts = await collection.find({}).toArray();
+        const result = {};
+        counts.forEach(item => {
+            result[item.productId] = item.count;
+        });
+        return result;
+    } catch (error) {
+        console.error('获取爱心数量时出错:', error);
+        return {};
+    }
+}
+
+// 更新产品的爱心数量
+async function updateHeartCount(productId, increment) {
+    const database = await connectDB();
+    if (!database) {
+        return null;
+    }
+
+    try {
+        const collection = database.collection('heartCounts');
+        
+        // 使用 upsert 操作，如果不存在则创建，存在则更新
+        const result = await collection.findOneAndUpdate(
+            { productId: productId },
+            { 
+                $inc: { count: increment },
+                $setOnInsert: { 
+                    productId: productId,
+                    count: 2000 + increment, // 如果不存在，初始值为2000 + increment
+                    updatedAt: new Date()
+                },
+                $set: { updatedAt: new Date() }
+            },
+            { 
+                upsert: true,
+                returnDocument: 'after'
+            }
+        );
+        
+        return result.value ? result.value.count : null;
+    } catch (error) {
+        console.error('更新爱心数量时出错:', error);
+        throw error;
+    }
+}
+
+// 初始化所有产品的爱心数量（如果不存在）
+async function initHeartCounts(productIds) {
+    const database = await connectDB();
+    if (!database) {
+        return;
+    }
+
+    try {
+        const collection = database.collection('heartCounts');
+        
+        for (const productId of productIds) {
+            await collection.updateOne(
+                { productId: productId },
+                { 
+                    $setOnInsert: { 
+                        productId: productId,
+                        count: 2000,
+                        createdAt: new Date(),
+                        updatedAt: new Date()
+                    }
+                },
+                { upsert: true }
+            );
+        }
+    } catch (error) {
+        console.error('初始化爱心数量时出错:', error);
+    }
+}
+
 module.exports = {
     connectDB,
     disconnectDB,
     saveSubmission,
     getAllSubmissions,
     getProductSubmissions,
-    getStatistics
+    getStatistics,
+    getHeartCounts,
+    updateHeartCount,
+    initHeartCounts
 };
 
