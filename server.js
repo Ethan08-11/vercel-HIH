@@ -541,22 +541,68 @@ app.post('/api/heart-count', async (req, res) => {
         const useDatabase = !!process.env.MONGODB_URI;
         
         if (useDatabase) {
-            const newCount = await db.updateHeartCount(parseInt(productId), parseInt(increment));
-            return res.json({
-                success: true,
-                productId: parseInt(productId),
-                count: newCount
-            });
+            // 获取用户信息（用于记录点击历史）
+            const userInfo = {
+                userAgent: req.headers['user-agent'] || '',
+                ip: req.ip || req.connection.remoteAddress || '',
+                sessionId: req.headers['x-session-id'] || ''
+            };
+            
+            // 更新爱心数量（同时记录点击历史）
+            const newCount = await db.updateHeartCount(parseInt(productId), parseInt(increment), userInfo);
+            
+            if (newCount !== null) {
+                console.log(`✅ 产品 ${productId} 爱心数量已保存到数据库: ${newCount}`);
+                return res.json({
+                    success: true,
+                    productId: parseInt(productId),
+                    count: newCount,
+                    message: '数据已保存到服务器'
+                });
+            } else {
+                return res.status(500).json({
+                    success: false,
+                    message: '数据库更新失败'
+                });
+            }
         }
         
-        // 如果没有数据库，返回成功但不保存
-        res.json({
-            success: true,
+        // 如果没有数据库，返回错误提示
+        res.status(503).json({
+            success: false,
             productId: parseInt(productId),
-            message: '数据库未配置，数量未保存'
+            message: '数据库未配置，无法保存数据。请配置 MONGODB_URI 环境变量。'
         });
     } catch (error) {
         console.error('更新爱心数量时出错:', error);
+        res.status(500).json({
+            success: false,
+            message: '服务器错误：' + error.message
+        });
+    }
+});
+
+// 获取产品的点击统计信息
+app.get('/api/heart-stats/:productId', async (req, res) => {
+    try {
+        const productId = parseInt(req.params.productId);
+        const useDatabase = !!process.env.MONGODB_URI;
+        
+        if (useDatabase) {
+            const stats = await db.getHeartClickStats(productId);
+            return res.json({
+                success: true,
+                productId: productId,
+                stats: stats
+            });
+        }
+        
+        res.json({
+            success: false,
+            message: '数据库未配置'
+        });
+    } catch (error) {
+        console.error('获取点击统计时出错:', error);
         res.status(500).json({
             success: false,
             message: '服务器错误：' + error.message
@@ -613,7 +659,8 @@ async function initServer() {
         console.log('  GET  /api/statistics - 获取所有产品的统计信息');
         console.log('  GET  /api/export - 导出所有数据为JSON文件');
         console.log('  GET  /api/heart-counts - 获取所有产品的爱心数量');
-        console.log('  POST /api/heart-count - 更新产品的爱心数量');
+        console.log('  POST /api/heart-count - 更新产品的爱心数量（同时记录点击历史）');
+        console.log('  GET  /api/heart-stats/:productId - 获取产品的点击统计信息');
     });
 }
 

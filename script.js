@@ -252,7 +252,7 @@ function updateHeartCountDisplay(productIndex, count) {
     }
 }
 
-// 更新指定产品的爱心数量（同步到服务器）
+// 更新指定产品的爱心数量（同步到服务器，确保数据持久化）
 async function updateHeartCount(productIndex, increment) {
     // 确保该产品的爱心数量已初始化
     if (heartCounts[productIndex] === undefined) {
@@ -268,34 +268,49 @@ async function updateHeartCount(productIndex, increment) {
     const newCount = heartCounts[productIndex] + increment;
     updateHeartCountDisplay(productIndex, newCount);
     
-    // 同步到服务器
-    try {
-        const API_BASE_URL = window.API_BASE_URL || window.location.origin;
-        const productId = productImages[productIndex].id;
-        
-        const response = await fetch(`${API_BASE_URL}/api/heart-count`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                productId: productId,
-                increment: increment
-            })
-        });
-        
-        const result = await response.json();
-        
-        if (result.success && result.count !== undefined) {
-            // 使用服务器返回的最新数量（确保数据一致性）
-            updateHeartCountDisplay(productIndex, result.count);
-            console.log(`产品 ${productId} 爱心数量已更新到服务器: ${result.count}`);
-        } else {
-            console.warn('服务器更新失败，保持本地更新:', newCount);
+    // 同步到服务器（确保数据持久化存储）
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+        try {
+            const API_BASE_URL = window.API_BASE_URL || window.location.origin;
+            const productId = productImages[productIndex].id;
+            
+            const response = await fetch(`${API_BASE_URL}/api/heart-count`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    productId: productId,
+                    increment: increment
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success && result.count !== undefined) {
+                // 使用服务器返回的最新数量（确保数据一致性）
+                updateHeartCountDisplay(productIndex, result.count);
+                console.log(`✅ 产品 ${productId} 爱心数量已保存到服务器: ${result.count}`);
+                return; // 成功，退出重试循环
+            } else {
+                throw new Error(result.message || '服务器返回失败');
+            }
+        } catch (error) {
+            retryCount++;
+            console.error(`更新爱心数量到服务器失败 (尝试 ${retryCount}/${maxRetries}):`, error);
+            
+            if (retryCount < maxRetries) {
+                // 等待后重试（指数退避）
+                await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+            } else {
+                // 所有重试都失败，保持本地更新
+                console.error('❌ 所有重试都失败，数据未保存到服务器。本地数量:', newCount);
+                // 可以在这里添加错误提示或本地存储作为备份
+            }
         }
-    } catch (error) {
-        console.error('更新爱心数量到服务器失败:', error);
-        // 如果失败，保持本地更新
     }
 }
 
