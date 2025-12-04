@@ -40,6 +40,28 @@ const productImages = [
     }
 ];
 
+// 检测是否为移动设备（包括平板）
+function isMobileDevice() {
+    const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+    const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
+    const isTablet = /ipad|android(?!.*mobile)|tablet/i.test(userAgent.toLowerCase());
+    return isMobile || isTablet || window.innerWidth <= 768;
+}
+
+// 检测是否为低速网络
+function isSlowNetwork() {
+    // 检查网络信息API（如果支持）
+    if ('connection' in navigator) {
+        const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        if (connection) {
+            // 如果是2G或慢速3G，认为是低速网络
+            const slowConnections = ['slow-2g', '2g'];
+            return slowConnections.includes(connection.effectiveType);
+        }
+    }
+    return false;
+}
+
 // 检测浏览器是否支持 WebP（增强版，更好的兼容性检测）
 function supportsWebP() {
     try {
@@ -55,9 +77,18 @@ function supportsWebP() {
     }
 }
 
-// 获取图片 URL（支持 WebP 回退）
+// 获取图片 URL（支持 WebP 回退，移动端优先使用JPG）
 function getImageUrl(item) {
-    // 如果浏览器支持 WebP，使用 WebP，否则使用 JPG
+    const isMobile = isMobileDevice();
+    const isSlow = isSlowNetwork();
+    
+    // 移动端或低速网络优先使用JPG（更快更稳定）
+    if (isMobile || isSlow) {
+        console.log('移动端/低速网络：优先使用JPG格式');
+        return item.fallback || item.image.replace('.webp', '.jpg');
+    }
+    
+    // 桌面端：如果浏览器支持 WebP，使用 WebP，否则使用 JPG
     if (supportsWebP() && item.image) {
         return item.image;
     }
@@ -74,6 +105,11 @@ let productJumpTimers = {}; // 存储每个产品的跳转定时器
 let pendingHeartUpdates = {}; // 存储待处理的爱心更新队列 { productIndex: pendingIncrement }
 let updateLocks = {}; // 防止并发更新的锁 { productIndex: isUpdating }
 let lastUpdateTime = {}; // 记录每个产品的最后更新时间 { productIndex: timestamp }
+let loadingQueue = []; // 图片加载队列，控制并发加载数量
+let activeLoads = 0; // 当前正在加载的图片数量
+const MAX_CONCURRENT_LOADS = isMobileDevice() ? 2 : 4; // 移动端最多2个并发，桌面端4个
+let clickTimers = {}; // 点击防抖定时器 { productIndex: timer }
+const CLICK_DEBOUNCE_DELAY = 500; // 点击防抖延迟（毫秒），防止快速点击
 
 // 初始化问卷
 async function initQuestionnaire() {
@@ -129,46 +165,46 @@ function createProductCard(item, index) {
     const img = document.createElement('img');
     img.className = 'product-image';
     img.alt = item.name;
-    img.loading = 'lazy'; // 浏览器原生懒加载
+    // 移动端不使用懒加载，立即加载以提高速度
+    const isMobileDevice_ = isMobileDevice();
+    img.loading = isMobileDevice_ ? 'eager' : 'lazy';
     
     // 获取图片 URL（支持 WebP 回退）
     const imageUrl = getImageUrl(item);
     const fallbackUrl = item.fallback || imageUrl.replace('.webp', '.jpg');
     
-    // 设置回退图片
-    img.onerror = function() {
-        // 如果 WebP 加载失败，尝试加载 JPG
-        if (this.src !== fallbackUrl && this.src.includes('.webp')) {
-            console.log(`WebP 加载失败，回退到 JPG: ${item.name}`);
-            this.src = fallbackUrl;
-        }
-    };
-    
     // 使用 data-src 存储图片路径，实现懒加载
     // 只对第一张图片立即加载，其他图片延迟加载
     if (index === 0) {
+        // 第一张图片立即加载
         img.src = imageUrl;
         img.dataset.loaded = 'false';
+        img.dataset.src = imageUrl; // 同时保存到data-src，供loadImage函数使用
+        img.dataset.fallback = fallbackUrl;
+        // 第一张图片显示加载占位符
+        if (loadingPlaceholder) {
+            loadingPlaceholder.style.display = 'flex';
+        }
     } else {
+        // 其他图片使用懒加载
         img.dataset.src = imageUrl;
         img.dataset.fallback = fallbackUrl;
         img.dataset.loaded = 'false';
         loadingPlaceholder.style.display = 'none'; // 未加载的图片先隐藏占位符
     }
     
-    // 预加载前两张图片（提高初始加载速度）
+    // 预加载策略优化：移动端减少预加载，桌面端正常预加载
     if (index === 0) {
-        // 第一张立即加载，同时预加载第二张
-        setTimeout(() => {
-            if (productImages.length > 1) {
-                preloadImage(1);
-            }
-        }, 500);
-    } else if (index === 1) {
-        // 第二张也预加载
-        setTimeout(() => {
-            preloadImage(1);
-        }, 1000);
+        // 第一张立即加载
+        if (!isMobileDevice_) {
+            // 桌面端：预加载第二张
+            setTimeout(() => {
+                if (productImages.length > 1) {
+                    preloadImage(1);
+                }
+            }, 500);
+        }
+        // 移动端：不预加载，减少初始加载负担，专注于当前图片
     }
     
     // 图片加载完成事件（统一处理所有图片）
@@ -184,28 +220,37 @@ function createProductCard(item, index) {
             this.style.transition = 'opacity 0.3s ease';
             this.style.opacity = '1';
         });
-    });
+    }, { once: true });
     
-    // 图片加载错误事件
+    // 统一图片加载错误处理
+    const itemName = item.name; // 保存到局部变量，确保在闭包中可访问
     img.addEventListener('error', function() {
+        const currentSrc = this.src;
+        const fbUrl = this.dataset.fallback || fallbackUrl;
+        
+        // 如果 WebP 加载失败，尝试加载 JPG
+        if (currentSrc !== fbUrl && currentSrc.includes('.webp') && fbUrl) {
+            console.log(`WebP 加载失败，回退到 JPG: ${itemName || '图片'}`);
+            this.src = fbUrl;
+            return; // 尝试加载回退图片，不触发错误处理
+        }
+        
+        // JPG也加载失败，显示错误信息
         const placeholder = this.parentElement.querySelector('.image-loading');
         if (placeholder) {
+            placeholder.style.display = 'flex';
             placeholder.innerHTML = '<div class="image-error">图片加载失败<br><button onclick="location.reload()" style="margin-top:10px;padding:8px 16px;background:#667eea;color:white;border:none;border-radius:4px;cursor:pointer;">重试</button></div>';
         }
     });
     
     // 如果图片已经缓存（complete），立即触发加载完成
-    if (img.complete && img.naturalHeight !== 0) {
+    if (img.complete && img.naturalHeight !== 0 && img.src) {
         img.dataset.loaded = 'true';
-        loadingPlaceholder.style.display = 'none';
+        if (loadingPlaceholder) {
+            loadingPlaceholder.style.display = 'none';
+        }
         img.style.opacity = '1';
     }
-    
-    img.onerror = function() {
-        // 如果图片加载失败，显示占位符
-        loadingPlaceholder.innerHTML = '<div class="image-placeholder">图片加载失败</div>';
-        this.style.display = 'none';
-    };
     
     // 选中标记 - 爱心图标和数量
     const selectedMark = document.createElement('div');
@@ -575,22 +620,35 @@ function createFloatingHeart(container, productIndex) {
     }
 }
 
-// 选择产品
+// 选择产品（带防抖机制，防止快速点击导致图片变大）
 function selectProduct(productIndex) {
+    // 防抖处理：如果正在处理中，忽略本次点击
+    if (clickTimers[productIndex]) {
+        return; // 正在处理中，忽略本次点击
+    }
+    
     stopAutoPlay(); // 用户选择产品时停止自动轮播
     
     answers[productIndex] = true;
     
     // 更新UI显示选中状态
     const card = document.querySelector(`[data-index="${productIndex}"]`);
+    if (!card) return;
+    
     const imageContainer = card.querySelector('.product-image-container');
+    if (!imageContainer) return;
+    
+    // 设置点击锁标识，防止快速连续点击
+    clickTimers[productIndex] = 'processing';
     
     // 始终设置为选中状态
     imageContainer.classList.add('selected');
     
     // 触发明显的心跳动画
     const heartIcon = imageContainer.querySelector('.heart-icon');
-    triggerHeartbeat(heartIcon);
+    if (heartIcon) {
+        triggerHeartbeat(heartIcon);
+    }
     
     // 每次点击都增加爱心数量
     updateHeartCount(productIndex, 1);
@@ -613,14 +671,29 @@ function selectProduct(productIndex) {
         delete productJumpTimers[productIndex];
     }, 7000); // 2000ms动画 + 5000ms等待 = 7000ms
     
+    // 解除点击锁（延迟解除，防止快速连续点击导致图片变大）
+    const isMobile = isMobileDevice();
+    const debounceDelay = isMobile ? CLICK_DEBOUNCE_DELAY : 300; // 移动端更长的防抖时间，防止快速点击
+    
+    // 清除之前的定时器（如果存在）
+    if (clickTimers[productIndex] && typeof clickTimers[productIndex] === 'number') {
+        clearTimeout(clickTimers[productIndex]);
+    }
+    
+    // 设置新的定时器来解除点击锁
+    clickTimers[productIndex] = setTimeout(() => {
+        delete clickTimers[productIndex];
+    }, debounceDelay);
+    
     updateNavButtons();
 }
 
 // 图片加载重试机制（优化版，更好的错误处理）
 function loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries = 3, retryCount = 0) {
     return new Promise((resolve, reject) => {
-        // 增加超时时间到15秒，给平板端更多时间
-        const timeoutDuration = 15000;
+        // 移动端使用更短的超时时间，快速失败并回退到JPG
+        const isMobile = isMobileDevice();
+        const timeoutDuration = isMobile ? 8000 : 15000;
         const timeout = setTimeout(() => {
             clearTimeout(timeout);
             if (retryCount < maxRetries) {
@@ -703,7 +776,9 @@ function preloadImage(index) {
     
     const preloadImg = new Image();
     
-    // 设置超时，避免长时间等待
+    // 设置超时，移动端使用更短超时
+    const isMobile = isMobileDevice();
+    const timeoutDuration = isMobile ? 6000 : 10000;
     const timeout = setTimeout(() => {
         preloadImg.onload = null;
         preloadImg.onerror = null;
@@ -723,7 +798,7 @@ function preloadImage(index) {
             };
             fallbackImg.src = fallbackUrl;
         }
-    }, 10000); // 10秒超时
+    }, timeoutDuration);
     
     preloadImg.onload = function() {
         clearTimeout(timeout);
@@ -845,18 +920,26 @@ async function loadImage(index) {
         }
     }
     
-    // 预加载相邻的图片（提前加载下一张和上一张）
+    // 预加载策略优化：移动端只预加载下一张，桌面端预加载相邻图片
+    const isMobile = isMobileDevice();
     const nextIndex = index + 1;
     const prevIndex = index - 1;
     
-    // 预加载下一张
+    // 预加载下一张（移动端和桌面端都预加载，确保最后几张也能加载）
     if (nextIndex < productImages.length) {
-        preloadImage(nextIndex);
+        // 移动端：延迟预加载，避免阻塞当前图片
+        // 桌面端：立即预加载
+        const delay = isMobile ? 800 : 0;
+        setTimeout(() => {
+            preloadImage(nextIndex);
+        }, delay);
     }
     
-    // 预加载上一张（如果还没加载）
-    if (prevIndex >= 0) {
-        preloadImage(prevIndex);
+    // 桌面端：也预加载上一张（移动端不预加载，节省资源）
+    if (!isMobile && prevIndex >= 0) {
+        setTimeout(() => {
+            preloadImage(prevIndex);
+        }, 500);
     }
 }
 
@@ -887,6 +970,15 @@ function showProduct(index) {
     
     // 加载当前图片（懒加载）
     loadImage(index);
+    
+    // 移动端：立即预加载下一张图片（特别是最后几张），提高切换速度
+    const isMobile = isMobileDevice();
+    if (isMobile && index < productImages.length - 1) {
+        // 移动端：立即预加载下一张，减少等待时间
+        setTimeout(() => {
+            preloadImage(index + 1);
+        }, 300);
+    }
     
     updateProgress();
     updateNavButtons();
