@@ -152,6 +152,8 @@ function createProductCard(item, index) {
     
     const imageContainer = document.createElement('div');
     imageContainer.className = 'product-image-container';
+    
+    // 统一使用click事件，CSS的touch-action: manipulation已经防止了双击缩放
     imageContainer.onclick = () => selectProduct(index);
     
     // 添加加载占位符
@@ -165,13 +167,16 @@ function createProductCard(item, index) {
     const img = document.createElement('img');
     img.className = 'product-image';
     img.alt = item.name;
-    // 移动端不使用懒加载，立即加载以提高速度
-    const isMobileDevice_ = isMobileDevice();
-    img.loading = isMobileDevice_ ? 'eager' : 'lazy';
     
     // 获取图片 URL（支持 WebP 回退）
     const imageUrl = getImageUrl(item);
     const fallbackUrl = item.fallback || imageUrl.replace('.webp', '.jpg');
+    
+    // 检测是否为移动设备（用于设置加载策略）
+    const isMobile = isMobileDevice();
+    
+    // 移动端不使用懒加载，立即加载以提高速度
+    img.loading = isMobile ? 'eager' : 'lazy';
     
     // 使用 data-src 存储图片路径，实现懒加载
     // 只对第一张图片立即加载，其他图片延迟加载
@@ -196,7 +201,7 @@ function createProductCard(item, index) {
     // 预加载策略优化：移动端减少预加载，桌面端正常预加载
     if (index === 0) {
         // 第一张立即加载
-        if (!isMobileDevice_) {
+        if (!isMobile) {
             // 桌面端：预加载第二张
             setTimeout(() => {
                 if (productImages.length > 1) {
@@ -224,18 +229,21 @@ function createProductCard(item, index) {
     
     // 统一图片加载错误处理
     const itemName = item.name; // 保存到局部变量，确保在闭包中可访问
+    let errorCount = 0; // 记录错误次数
     img.addEventListener('error', function() {
+        errorCount++;
         const currentSrc = this.src;
         const fbUrl = this.dataset.fallback || fallbackUrl;
         
-        // 如果 WebP 加载失败，尝试加载 JPG
-        if (currentSrc !== fbUrl && currentSrc.includes('.webp') && fbUrl) {
+        // 如果 WebP 加载失败，尝试加载 JPG（只尝试一次）
+        if (errorCount === 1 && currentSrc !== fbUrl && currentSrc.includes('.webp') && fbUrl) {
             console.log(`WebP 加载失败，回退到 JPG: ${itemName || '图片'}`);
             this.src = fbUrl;
             return; // 尝试加载回退图片，不触发错误处理
         }
         
-        // JPG也加载失败，显示错误信息
+        // JPG也加载失败或已经是JPG了，显示错误信息
+        console.error(`图片加载失败: ${itemName || '图片'}, 当前URL: ${currentSrc}`);
         const placeholder = this.parentElement.querySelector('.image-loading');
         if (placeholder) {
             placeholder.style.display = 'flex';
@@ -249,7 +257,26 @@ function createProductCard(item, index) {
         if (loadingPlaceholder) {
             loadingPlaceholder.style.display = 'none';
         }
+        // 确保图片可见
         img.style.opacity = '1';
+        // 手动触发load事件以确保所有处理都完成
+        img.dispatchEvent(new Event('load'));
+    } else if (index === 0 && img.src) {
+        // 第一张图片如果还没加载完成，设置一个超时检查
+        const checkImageLoaded = setInterval(() => {
+            if (img.complete) {
+                clearInterval(checkImageLoaded);
+                if (img.naturalHeight !== 0) {
+                    img.dataset.loaded = 'true';
+                    if (loadingPlaceholder) {
+                        loadingPlaceholder.style.display = 'none';
+                    }
+                    img.style.opacity = '1';
+                }
+            }
+        }, 100);
+        // 10秒后停止检查
+        setTimeout(() => clearInterval(checkImageLoaded), 10000);
     }
     
     // 选中标记 - 爱心图标和数量
@@ -1107,6 +1134,37 @@ function initializeApp() {
         }
     }
 }
+
+// 阻止移动端双击缩放
+(function() {
+    let lastTouchEnd = 0;
+    const preventDoubleZoom = function(e) {
+        const now = Date.now();
+        if (now - lastTouchEnd <= 300) {
+            e.preventDefault();
+            return false;
+        }
+        lastTouchEnd = now;
+    };
+    
+    // 如果是移动设备，阻止双击缩放
+    if (isMobileDevice()) {
+        document.addEventListener('touchend', preventDoubleZoom, { passive: false });
+        
+        // 阻止双击手势
+        let lastTap = 0;
+        document.addEventListener('touchstart', function(e) {
+            const currentTime = new Date().getTime();
+            const tapLength = currentTime - lastTap;
+            
+            if (tapLength < 300 && tapLength > 0) {
+                e.preventDefault();
+                return false;
+            }
+            lastTap = currentTime;
+        }, { passive: false });
+    }
+})();
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOMContentLoaded 事件触发');

@@ -83,21 +83,6 @@
                 };
             }
             
-            // 延迟检查，确保脚本有时间执行
-            setTimeout(function() {
-                const carouselWrapper = document.getElementById('carouselWrapper');
-                if (carouselWrapper && carouselWrapper.children.length === 0) {
-                    console.warn('警告：carouselWrapper 为空，JavaScript 可能未执行');
-                    // 显示提示
-                    if (!document.querySelector('.loading-message')) {
-                        const msg = document.createElement('div');
-                        msg.className = 'loading-message';
-                        msg.style.cssText = 'padding: 20px; text-align: center; color: #666;';
-                        msg.innerHTML = '<p>正在加载内容...</p><p>如果长时间无响应，请刷新页面</p>';
-                        carouselWrapper.appendChild(msg);
-                    }
-                }
-            }, 2000);
         })();
     </script>
     <script src="/script.js"></script>

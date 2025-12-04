@@ -102,6 +102,14 @@ body {
     background: #f8f9fa;
     padding: 10px;
     flex-shrink: 0;
+    /* 移动端禁用双击缩放和手势缩放 */
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
 }
 
 .product-image-container:hover {
@@ -123,6 +131,13 @@ body {
     display: block;
     margin: 0 auto;
     opacity: 0;
+    /* 防止移动端图片被拖拽和缩放 */
+    touch-action: manipulation;
+    -webkit-user-drag: none;
+    -khtml-user-drag: none;
+    -moz-user-drag: none;
+    -o-user-drag: none;
+    pointer-events: auto;
 }
 
 .product-image[data-loaded="true"] {
@@ -595,7 +610,9 @@ body {
     body {
         padding: 0;
         -webkit-tap-highlight-color: transparent;
-        touch-action: pan-y;
+        /* 禁用双击缩放，只允许垂直滚动 */
+        touch-action: manipulation;
+        -ms-touch-action: manipulation;
     }
     
     /* 移动端禁用hover效果，防止点击时触发hover导致图片变大 */
@@ -610,6 +627,17 @@ body {
     /* 确保选中状态下图片不变大 */
     .product-image-container.selected .product-image {
         transform: none !important;
+    }
+    
+    /* 移动端图片容器禁用所有手势缩放 */
+    .product-image-container {
+        touch-action: manipulation !important;
+        -ms-touch-action: manipulation !important;
+    }
+    
+    .product-image {
+        touch-action: manipulation !important;
+        -ms-touch-action: manipulation !important;
     }
 
     .container {
