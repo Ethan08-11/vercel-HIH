@@ -64,6 +64,9 @@ let autoPlayTimer = null; // 自动轮播定时器
 const AUTO_PLAY_INTERVAL = 5000; // 自动轮播间隔（5秒）
 let heartCounts = {}; // 每个产品的爱心数量，初始值为2000
 let productJumpTimers = {}; // 存储每个产品的跳转定时器
+let pendingHeartUpdates = {}; // 存储待处理的爱心更新队列 { productIndex: pendingIncrement }
+let updateLocks = {}; // 防止并发更新的锁 { productIndex: isUpdating }
+let lastUpdateTime = {}; // 记录每个产品的最后更新时间 { productIndex: timestamp }
 
 // 初始化问卷
 async function initQuestionnaire() {
@@ -256,9 +259,10 @@ function formatNumber(num) {
     return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
-// 更新指定产品的爱心数量显示（本地更新）
+// 更新指定产品的爱心数量显示（本地更新，立即生效）
 function updateHeartCountDisplay(productIndex, count) {
     heartCounts[productIndex] = count;
+    lastUpdateTime[productIndex] = Date.now(); // 记录更新时间
     
     // 更新该产品的爱心数量显示
     const countDisplay = document.querySelector(`.heart-count[data-product-index="${productIndex}"]`);
@@ -288,64 +292,99 @@ async function updateHeartCount(productIndex, increment) {
         }
     }
     
-    // 先本地更新（乐观更新）
+    // 累积待处理的增量（处理快速点击）
+    if (!pendingHeartUpdates[productIndex]) {
+        pendingHeartUpdates[productIndex] = 0;
+    }
+    pendingHeartUpdates[productIndex] += increment;
+    
+    // 立即本地更新（乐观更新，不等待服务器）
     const newCount = heartCounts[productIndex] + increment;
     updateHeartCountDisplay(productIndex, newCount);
     
-    // 同步到服务器（确保数据持久化存储）
-    let retryCount = 0;
-    const maxRetries = 3;
+    // 使用防抖机制，批量发送请求（延迟200ms，如果在这期间有更多点击，会累积）
+    clearTimeout(updateLocks[productIndex]);
     
-    while (retryCount < maxRetries) {
-        try {
-            const API_BASE_URL = window.API_BASE_URL || window.location.origin;
-            const productId = productImages[productIndex].id;
-            
-            const response = await fetch(`${API_BASE_URL}/api/heart-count`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    productId: productId,
-                    increment: increment
-                })
-            });
-            
-            const result = await response.json();
-            
-            // 如果服务器返回了count值（即使success为false），也使用它
-            // 这样可以避免数据重置，即使更新失败也能保持当前值
-            if (result.count !== undefined) {
-                // 使用服务器返回的数量（确保数据一致性）
-                updateHeartCountDisplay(productIndex, result.count);
-                if (result.success) {
-                    console.log(`✅ 产品 ${productId} 爱心数量已保存到服务器: ${result.count}`);
+    updateLocks[productIndex] = setTimeout(async () => {
+        // 获取累积的增量值（快速点击时会累积）
+        const totalIncrement = pendingHeartUpdates[productIndex] || 0;
+        pendingHeartUpdates[productIndex] = 0; // 清空累积值
+        
+        // 如果没有累积值（理论上不应该发生），直接返回
+        if (totalIncrement === 0) {
+            delete updateLocks[productIndex];
+            return;
+        }
+        
+        // 获取更新前的本地值，用于验证
+        const localCountBeforeUpdate = heartCounts[productIndex];
+        const expectedServerCount = localCountBeforeUpdate;
+        
+        // 同步到服务器（确保数据持久化存储）
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        while (retryCount < maxRetries) {
+            try {
+                const API_BASE_URL = window.API_BASE_URL || window.location.origin;
+                const productId = productImages[productIndex].id;
+                
+                const response = await fetch(`${API_BASE_URL}/api/heart-count`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        productId: productId,
+                        increment: totalIncrement
+                    })
+                });
+                
+                const result = await response.json();
+                
+                // 如果服务器返回了count值
+                if (result.count !== undefined) {
+                    const currentLocalCount = heartCounts[productIndex];
+                    const serverCount = result.count;
+                    
+                    // 如果服务器返回的值大于或等于本地值，说明服务器已经成功保存了我们的更新（可能还有其他用户的更新）
+                    // 使用服务器值以确保数据一致性
+                    if (serverCount >= currentLocalCount) {
+                        // 服务器值更新或相同，使用服务器值（可能包含了其他用户的点赞）
+                        updateHeartCountDisplay(productIndex, serverCount);
+                    }
+                    // 如果服务器值小于本地值，可能是服务器数据滞后，保持本地值
+                    
+                    if (result.success) {
+                        console.log(`✅ 产品 ${productId} 爱心数量已保存到服务器: ${serverCount} (本地: ${currentLocalCount})`);
+                    } else {
+                        console.warn(`⚠️ 产品 ${productId} 更新失败，但使用服务器返回的值: ${serverCount}`);
+                    }
+                    return; // 有count值，退出重试循环
+                } else if (result.success) {
+                    // 成功但没有count值，保持本地更新
+                    console.log(`✅ 产品 ${productId} 更新成功（使用本地值）`);
+                    return;
                 } else {
-                    console.warn(`⚠️ 产品 ${productId} 更新失败，但使用服务器返回的值: ${result.count}`);
+                    throw new Error(result.message || '服务器返回失败');
                 }
-                return; // 有count值，退出重试循环
-            } else if (result.success) {
-                // 成功但没有count值，保持本地更新
-                console.log(`✅ 产品 ${productId} 更新成功（使用本地值）`);
-                return;
-            } else {
-                throw new Error(result.message || '服务器返回失败');
-            }
-        } catch (error) {
-            retryCount++;
-            console.error(`更新爱心数量到服务器失败 (尝试 ${retryCount}/${maxRetries}):`, error);
-            
-            if (retryCount < maxRetries) {
-                // 等待后重试（指数退避）
-                await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
-            } else {
-                // 所有重试都失败，保持本地更新
-                console.error('❌ 所有重试都失败，数据未保存到服务器。本地数量:', newCount);
-                // 可以在这里添加错误提示或本地存储作为备份
+            } catch (error) {
+                retryCount++;
+                console.error(`更新爱心数量到服务器失败 (尝试 ${retryCount}/${maxRetries}):`, error);
+                
+                if (retryCount < maxRetries) {
+                    // 等待后重试（指数退避）
+                    await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+                } else {
+                    // 所有重试都失败，保持本地更新
+                    console.error('❌ 所有重试都失败，数据未保存到服务器。本地数量:', localCountBeforeUpdate);
+                    // 可以在这里添加错误提示或本地存储作为备份
+                }
             }
         }
-    }
+        
+        delete updateLocks[productIndex];
+    }, 200); // 200ms防抖延迟
 }
 
 // 从服务器获取所有产品的爱心数量
@@ -370,16 +409,32 @@ async function loadHeartCountsFromServer() {
         console.log('服务器返回的数据:', result);
         
         if (result.success && result.heartCounts) {
-            // 更新所有产品的爱心数量（强制使用服务器数据）
+            // 更新所有产品的爱心数量（智能合并服务器数据）
             productImages.forEach((item, index) => {
                 const productId = item.id;
-                // 强制使用服务器返回的数据，确保数据一致性
-                if (result.heartCounts[productId] !== undefined) {
-                    heartCounts[index] = result.heartCounts[productId];
+                const serverCount = result.heartCounts[productId];
+                
+                // 如果服务器有数据
+                if (serverCount !== undefined) {
+                    const localCount = heartCounts[index] || 2000;
+                    const localUpdateTime = lastUpdateTime[index] || 0;
+                    const serverUpdateTime = result.updateTimes?.[productId] || 0;
+                    
+                    // 如果本地有最近的更新（5秒内），且本地值更大，保持本地值
+                    const timeSinceLocalUpdate = Date.now() - localUpdateTime;
+                    if (timeSinceLocalUpdate < 5000 && localCount >= serverCount) {
+                        // 本地值更新，保持本地值
+                        console.log(`产品 ${productId} 保持本地最新值: ${localCount} (服务器: ${serverCount})`);
+                    } else {
+                        // 使用服务器值或两者中较大的值
+                        heartCounts[index] = Math.max(serverCount, localCount);
+                    }
                 } else {
-                    // 如果服务器没有该产品的数据，使用默认值
-                    heartCounts[index] = 2000;
-                    console.warn(`产品 ${productId} 在服务器中没有数据，使用默认值2000`);
+                    // 如果服务器没有该产品的数据，使用本地值或默认值
+                    if (heartCounts[index] === undefined) {
+                        heartCounts[index] = 2000;
+                        console.warn(`产品 ${productId} 在服务器中没有数据，使用默认值2000`);
+                    }
                 }
                 
                 // 更新显示
@@ -523,48 +578,33 @@ function selectProduct(productIndex) {
     const card = document.querySelector(`[data-index="${productIndex}"]`);
     const imageContainer = card.querySelector('.product-image-container');
     
-    if (imageContainer.classList.contains('selected')) {
-        // 取消选择
-        imageContainer.classList.remove('selected');
-        delete answers[productIndex];
-        
-        // 数量减1
-        updateHeartCount(productIndex, -1);
-        
-        // 清除该产品的跳转定时器
-        if (productJumpTimers[productIndex]) {
-            clearTimeout(productJumpTimers[productIndex]);
-            delete productJumpTimers[productIndex];
-        }
-    } else {
-        // 选中
-        imageContainer.classList.add('selected');
-        
-        // 触发明显的心跳动画
-        const heartIcon = imageContainer.querySelector('.heart-icon');
-        triggerHeartbeat(heartIcon);
-        
-        // 更新该产品的爱心数量（每次点击只增加1）
-        updateHeartCount(productIndex, 1);
-        
-        // 创建飘动的爱心动画
-        createFloatingHeart(imageContainer, productIndex);
-        
-        // 清除之前的跳转定时器（如果存在）
-        if (productJumpTimers[productIndex]) {
-            clearTimeout(productJumpTimers[productIndex]);
-        }
-        
-        // 自动跳转到下一个产品（爱心动画结束后5秒再轮播）
-        // 动画持续时间2秒 + 等待5秒 = 总共7秒
-        productJumpTimers[productIndex] = setTimeout(() => {
-            if (currentIndex === productIndex && currentIndex < productImages.length - 1) {
-                nextQuestion();
-            }
-            // 清除定时器引用
-            delete productJumpTimers[productIndex];
-        }, 7000); // 2000ms动画 + 5000ms等待 = 7000ms
+    // 始终设置为选中状态
+    imageContainer.classList.add('selected');
+    
+    // 触发明显的心跳动画
+    const heartIcon = imageContainer.querySelector('.heart-icon');
+    triggerHeartbeat(heartIcon);
+    
+    // 每次点击都增加爱心数量
+    updateHeartCount(productIndex, 1);
+    
+    // 创建飘动的爱心动画
+    createFloatingHeart(imageContainer, productIndex);
+    
+    // 清除之前的跳转定时器（如果存在）
+    if (productJumpTimers[productIndex]) {
+        clearTimeout(productJumpTimers[productIndex]);
     }
+    
+    // 自动跳转到下一个产品（爱心动画结束后5秒再轮播）
+    // 动画持续时间2秒 + 等待5秒 = 总共7秒
+    productJumpTimers[productIndex] = setTimeout(() => {
+        if (currentIndex === productIndex && currentIndex < productImages.length - 1) {
+            nextQuestion();
+        }
+        // 清除定时器引用
+        delete productJumpTimers[productIndex];
+    }, 7000); // 2000ms动画 + 5000ms等待 = 7000ms
     
     updateNavButtons();
 }
