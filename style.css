@@ -142,16 +142,17 @@ body {
     top: 20px;
     right: 20px;
     width: auto;
-    min-width: 50px;
+    min-width: 70px;
     height: auto;
-    background: rgba(255, 255, 255, 0.9);
-    border-radius: 25px;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-radius: 35px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 8px 12px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+    padding: 12px 16px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
     transition: all 0.3s ease;
     z-index: 10;
 }
@@ -160,20 +161,30 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
+    transform-origin: center center;
+    /* 所有爱心都有持续的心跳效果 */
+    animation: heartbeatContinuous 1.5s ease-in-out infinite;
+}
+
+.heart-icon svg {
+    width: 56px;
+    height: 56px;
 }
 
 .selected-mark svg {
     transition: all 0.3s ease;
+    transform-origin: center center;
 }
 
 .heart-count {
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 14px;
+    font-weight: 700;
     color: #333;
-    line-height: 1;
+    line-height: 1.2;
     transition: all 0.3s ease;
     white-space: nowrap;
+    letter-spacing: 0.3px;
 }
 
 .heart-count.updating {
@@ -202,10 +213,11 @@ body {
 }
 
 .product-image-container.selected .selected-mark {
-    background: rgba(255, 255, 255, 0.95);
-    box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 6px 25px rgba(231, 76, 60, 0.35);
     animation: heartPop 0.3s ease;
 }
+
 
 .product-image-container.selected .heart-count {
     color: #e74c3c;
@@ -228,6 +240,55 @@ body {
     }
 }
 
+/* 明显的心跳动画 - 变大再恢复，心动效果明显 */
+@keyframes heartbeat {
+    0% {
+        transform: scale(1);
+    }
+    10% {
+        transform: scale(1.8);
+    }
+    20% {
+        transform: scale(1);
+    }
+    30% {
+        transform: scale(1.6);
+    }
+    40% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.4);
+    }
+    60% {
+        transform: scale(1);
+    }
+    70% {
+        transform: scale(1.2);
+    }
+    80% {
+        transform: scale(1);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* 持续的心跳动画 - 所有爱心都有持续心动效果，效果明显 */
+@keyframes heartbeatContinuous {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.15);
+    }
+}
+
+/* 点击时触发明显心跳动画 - 覆盖持续心跳 */
+.heart-icon.heartbeat-pulse {
+    animation: heartbeat 0.6s ease-in-out !important;
+}
+
 /* 飘动的爱心动画 */
 .floating-heart {
     position: absolute;
@@ -238,9 +299,9 @@ body {
 }
 
 .floating-heart svg {
-    width: 40px;
-    height: 40px;
-    filter: drop-shadow(0 2px 4px rgba(231, 76, 60, 0.3));
+    width: 56px;
+    height: 56px;
+    filter: drop-shadow(0 3px 6px rgba(231, 76, 60, 0.4));
 }
 
 .floating-heart.animate {
@@ -549,24 +610,30 @@ body {
 
 
     .selected-mark {
-        min-width: 44px;
-        padding: 6px 10px;
+        min-width: 58px;
+        padding: 10px 14px;
         top: 15px;
         right: 15px;
+        border-radius: 30px;
     }
 
     .selected-mark svg {
-        width: 32px;
-        height: 32px;
+        width: 44px;
+        height: 44px;
+    }
+
+    .heart-icon {
+        margin-bottom: 5px;
     }
 
     .heart-count {
-        font-size: 11px;
+        font-size: 12px;
+        font-weight: 700;
     }
 
     .floating-heart svg {
-        width: 32px;
-        height: 32px;
+        width: 44px;
+        height: 44px;
     }
 
     .nav-btn {

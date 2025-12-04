@@ -203,7 +203,7 @@ function createProductCard(item, index) {
     
     const heartIcon = document.createElement('div');
     heartIcon.className = 'heart-icon';
-    heartIcon.innerHTML = '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path class="heart-path" d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" fill="white"/></svg>';
+    heartIcon.innerHTML = '<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path class="heart-path" d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" fill="white"/></svg>';
     
     // 初始化该产品的爱心数量（如果还没有从服务器加载，使用默认值）
     if (heartCounts[index] === undefined) {
@@ -433,6 +433,25 @@ async function loadHeartCountsFromServer() {
     }
 }
 
+// 触发爱心心跳动画
+function triggerHeartbeat(heartIcon) {
+    if (!heartIcon) return;
+    
+    // 移除之前的动画类
+    heartIcon.classList.remove('heartbeat-pulse');
+    
+    // 强制重新计算样式，确保动画可以重新触发
+    void heartIcon.offsetWidth;
+    
+    // 添加心跳动画类
+    heartIcon.classList.add('heartbeat-pulse');
+    
+    // 动画结束后移除类，以便下次可以再次触发
+    setTimeout(() => {
+        heartIcon.classList.remove('heartbeat-pulse');
+    }, 600);
+}
+
 // 创建飘动的爱心动画（类似抖音点赞效果）
 function createFloatingHeart(container, productIndex) {
     const selectedMark = container.querySelector('.selected-mark');
@@ -472,7 +491,7 @@ function createFloatingHeart(container, productIndex) {
             
             // 创建SVG爱心
             floatingHeart.innerHTML = `
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="#e74c3c" stroke="#e74c3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg width="56" height="56" viewBox="0 0 24 24" fill="#e74c3c" stroke="#e74c3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
                 </svg>
             `;
@@ -520,6 +539,10 @@ function selectProduct(productIndex) {
     } else {
         // 选中
         imageContainer.classList.add('selected');
+        
+        // 触发明显的心跳动画
+        const heartIcon = imageContainer.querySelector('.heart-icon');
+        triggerHeartbeat(heartIcon);
         
         // 更新该产品的爱心数量（每次点击只增加1）
         updateHeartCount(productIndex, 1);
