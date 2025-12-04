@@ -163,8 +163,8 @@ body {
     justify-content: center;
     margin-bottom: 6px;
     transform-origin: center center;
-    /* 所有爱心都有持续的心跳效果 */
-    animation: heartbeatContinuous 1.5s ease-in-out infinite;
+    /* 所有爱心都有持续的心跳效果，更快更明显 */
+    animation: heartbeatContinuous 1.0s ease-in-out infinite;
 }
 
 .heart-icon svg {
@@ -240,31 +240,37 @@ body {
     }
 }
 
-/* 明显的心跳动画 - 变大再恢复，心动效果明显 */
+/* 明显的心跳动画 - 变大再恢复，心动效果极其明显 */
 @keyframes heartbeat {
     0% {
         transform: scale(1);
     }
-    10% {
-        transform: scale(1.8);
+    8% {
+        transform: scale(3.0);
     }
-    20% {
+    16% {
         transform: scale(1);
     }
-    30% {
-        transform: scale(1.6);
+    24% {
+        transform: scale(2.6);
+    }
+    32% {
+        transform: scale(1);
     }
     40% {
+        transform: scale(2.3);
+    }
+    48% {
         transform: scale(1);
     }
-    50% {
-        transform: scale(1.4);
+    56% {
+        transform: scale(2.0);
     }
-    60% {
+    64% {
         transform: scale(1);
     }
-    70% {
-        transform: scale(1.2);
+    72% {
+        transform: scale(1.7);
     }
     80% {
         transform: scale(1);
@@ -274,13 +280,13 @@ body {
     }
 }
 
-/* 持续的心跳动画 - 所有爱心都有持续心动效果，效果明显 */
+/* 持续的心跳动画 - 所有爱心都有持续心动效果，效果极其明显 */
 @keyframes heartbeatContinuous {
     0%, 100% {
         transform: scale(1);
     }
     50% {
-        transform: scale(1.15);
+        transform: scale(1.5);
     }
 }
 
