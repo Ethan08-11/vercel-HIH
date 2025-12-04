@@ -40,12 +40,19 @@ const productImages = [
     }
 ];
 
-// 检测浏览器是否支持 WebP
+// 检测浏览器是否支持 WebP（增强版，更好的兼容性检测）
 function supportsWebP() {
-    const canvas = document.createElement('canvas');
-    canvas.width = 1;
-    canvas.height = 1;
-    return canvas.toDataURL('image/webp').indexOf('data:image/webp') === 0;
+    try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1;
+        canvas.height = 1;
+        const result = canvas.toDataURL('image/webp').indexOf('data:image/webp') === 0;
+        console.log(`WebP支持检测: ${result ? '支持' : '不支持'}`);
+        return result;
+    } catch (e) {
+        console.warn('WebP检测失败，默认不支持:', e);
+        return false;
+    }
 }
 
 // 获取图片 URL（支持 WebP 回退）
@@ -609,51 +616,71 @@ function selectProduct(productIndex) {
     updateNavButtons();
 }
 
-// 图片加载重试机制
+// 图片加载重试机制（优化版，更好的错误处理）
 function loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries = 3, retryCount = 0) {
     return new Promise((resolve, reject) => {
+        // 增加超时时间到15秒，给平板端更多时间
+        const timeoutDuration = 15000;
         const timeout = setTimeout(() => {
+            clearTimeout(timeout);
             if (retryCount < maxRetries) {
                 console.log(`图片加载超时，重试 ${retryCount + 1}/${maxRetries}: ${imageUrl}`);
-                loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries, retryCount + 1)
-                    .then(resolve)
-                    .catch(reject);
+                // 如果是WebP，尝试回退到JPG
+                if (imageUrl.includes('.webp') && fallbackUrl && retryCount === 0) {
+                    console.log('WebP超时，尝试回退到JPG');
+                    loadImageWithRetry(img, fallbackUrl, null, maxRetries, retryCount + 1)
+                        .then(resolve)
+                        .catch(reject);
+                } else {
+                    loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries, retryCount + 1)
+                        .then(resolve)
+                        .catch(reject);
+                }
             } else {
-                reject(new Error('图片加载失败：超过最大重试次数'));
+                reject(new Error(`图片加载失败：超过最大重试次数 (${imageUrl})`));
             }
-        }, 10000); // 10秒超时
+        }, timeoutDuration);
 
         const tempImg = new Image();
+        
         tempImg.onload = function() {
             clearTimeout(timeout);
             img.src = imageUrl;
             img.dataset.loaded = 'true';
+            console.log(`✅ 图片加载成功: ${imageUrl}`);
             resolve();
         };
-        tempImg.onerror = function() {
+        
+        tempImg.onerror = function(error) {
             clearTimeout(timeout);
+            console.warn(`⚠️ 图片加载错误 (尝试 ${retryCount + 1}/${maxRetries + 1}): ${imageUrl}`);
+            
             // 如果是 WebP 且还有回退图片，尝试回退
             if (imageUrl.includes('.webp') && fallbackUrl && retryCount === 0) {
-                console.log('WebP 加载失败，尝试回退到 JPG');
+                console.log('WebP 加载失败，尝试回退到 JPG: ' + fallbackUrl);
                 loadImageWithRetry(img, fallbackUrl, null, maxRetries, retryCount + 1)
                     .then(resolve)
                     .catch(reject);
             } else if (retryCount < maxRetries) {
-                // 重试
+                // 重试，使用指数退避
+                const delay = 1000 * (retryCount + 1);
+                console.log(`等待 ${delay}ms 后重试...`);
                 setTimeout(() => {
                     loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries, retryCount + 1)
                         .then(resolve)
                         .catch(reject);
-                }, 1000 * (retryCount + 1)); // 指数退避
+                }, delay);
             } else {
-                reject(new Error('图片加载失败'));
+                reject(new Error(`图片加载失败: ${imageUrl}`));
             }
         };
+        
+        // 开始加载图片
         tempImg.src = imageUrl;
     });
 }
 
-// 预加载图片（静默加载，不显示占位符）
+// 预加载图片（静默加载，不显示占位符，增强错误处理）
 function preloadImage(index) {
     if (index < 0 || index >= productImages.length) return;
     
@@ -668,32 +695,66 @@ function preloadImage(index) {
     const imageUrl = getImageUrl(item);
     const fallbackUrl = item.fallback || imageUrl.replace('.webp', '.jpg');
     
+    // 先在data属性中保存URL，供后续加载使用
+    if (img.dataset.src) {
+        img.dataset.src = imageUrl;
+        img.dataset.fallback = fallbackUrl;
+    }
+    
     const preloadImg = new Image();
-    preloadImg.onload = function() {
-        img.dataset.preloaded = 'true';
+    
+    // 设置超时，避免长时间等待
+    const timeout = setTimeout(() => {
+        preloadImg.onload = null;
+        preloadImg.onerror = null;
         img.dataset.preloading = 'false';
-        console.log(`✅ 图片 ${index + 1} 预加载完成`);
-    };
-    preloadImg.onerror = function() {
-        // 如果 WebP 失败，尝试 JPG
+        console.warn(`⚠️ 图片 ${index + 1} (${item.name}) 预加载超时`);
+        
+        // 如果WebP超时，尝试JPG
         if (imageUrl.includes('.webp') && fallbackUrl) {
             const fallbackImg = new Image();
             fallbackImg.onload = function() {
                 img.dataset.preloaded = 'true';
                 img.dataset.preloadFallback = fallbackUrl;
+                console.log(`✅ 图片 ${index + 1} (${item.name}) 预加载完成（使用JPG回退）`);
+            };
+            fallbackImg.onerror = function() {
+                console.warn(`⚠️ 图片 ${index + 1} (${item.name}) 回退格式也加载失败`);
+            };
+            fallbackImg.src = fallbackUrl;
+        }
+    }, 10000); // 10秒超时
+    
+    preloadImg.onload = function() {
+        clearTimeout(timeout);
+        img.dataset.preloaded = 'true';
+        img.dataset.preloading = 'false';
+        console.log(`✅ 图片 ${index + 1} (${item.name}) 预加载完成`);
+    };
+    
+    preloadImg.onerror = function() {
+        clearTimeout(timeout);
+        // 如果 WebP 失败，尝试 JPG
+        if (imageUrl.includes('.webp') && fallbackUrl) {
+            console.log(`图片 ${index + 1} (${item.name}) WebP加载失败，尝试JPG回退`);
+            const fallbackImg = new Image();
+            fallbackImg.onload = function() {
+                img.dataset.preloaded = 'true';
+                img.dataset.preloadFallback = fallbackUrl;
                 img.dataset.preloading = 'false';
-                console.log(`✅ 图片 ${index + 1} 预加载完成（使用回退格式）`);
+                console.log(`✅ 图片 ${index + 1} (${item.name}) 预加载完成（使用JPG回退）`);
             };
             fallbackImg.onerror = function() {
                 img.dataset.preloading = 'false';
-                console.warn(`⚠️ 图片 ${index + 1} 预加载失败`);
+                console.warn(`⚠️ 图片 ${index + 1} (${item.name}) 预加载失败（WebP和JPG都失败）`);
             };
             fallbackImg.src = fallbackUrl;
         } else {
             img.dataset.preloading = 'false';
-            console.warn(`⚠️ 图片 ${index + 1} 预加载失败`);
+            console.warn(`⚠️ 图片 ${index + 1} (${item.name}) 预加载失败`);
         }
     };
+    
     preloadImg.src = imageUrl;
 }
 
@@ -715,8 +776,18 @@ async function loadImage(index) {
     }
     
     const item = productImages[index];
-    const imageUrl = getImageUrl(item);
-    const fallbackUrl = item.fallback || imageUrl.replace('.webp', '.jpg');
+    
+    // 优先使用 data-src（懒加载设置的值），如果没有则重新获取
+    let imageUrl = img.dataset.src || getImageUrl(item);
+    let fallbackUrl = img.dataset.fallback || item.fallback || imageUrl.replace('.webp', '.jpg');
+    
+    // 如果没有 data-src，重新获取 URL
+    if (!img.dataset.src) {
+        imageUrl = getImageUrl(item);
+        fallbackUrl = item.fallback || imageUrl.replace('.webp', '.jpg');
+        img.dataset.src = imageUrl;
+        img.dataset.fallback = fallbackUrl;
+    }
     
     // 如果已经预加载，直接使用
     if (img.dataset.preloaded === 'true') {
@@ -725,6 +796,12 @@ async function loadImage(index) {
         if (loadingPlaceholder) {
             loadingPlaceholder.style.display = 'none';
         }
+        // 触发加载事件以确保图片显示
+        img.style.opacity = '0';
+        requestAnimationFrame(() => {
+            img.style.transition = 'opacity 0.3s ease';
+            img.style.opacity = '1';
+        });
         return;
     }
     
@@ -735,9 +812,36 @@ async function loadImage(index) {
             loadingPlaceholder.style.display = 'none';
         }
     } catch (error) {
-        console.error(`❌ 图片 ${index + 1} 加载失败:`, error);
-        if (loadingPlaceholder) {
-            loadingPlaceholder.innerHTML = '<div class="image-error">加载失败<br><button onclick="location.reload()">重试</button></div>';
+        console.error(`❌ 图片 ${index + 1} (${item.name}) 加载失败:`, error);
+        console.error(`尝试的URL: ${imageUrl}, 回退URL: ${fallbackUrl}`);
+        
+        // 尝试直接使用回退图片
+        if (fallbackUrl && img.src !== fallbackUrl) {
+            console.log(`尝试直接加载回退图片: ${fallbackUrl}`);
+            const fallbackImg = new Image();
+            fallbackImg.onload = function() {
+                img.src = fallbackUrl;
+                img.dataset.loaded = 'true';
+                if (loadingPlaceholder) {
+                    loadingPlaceholder.style.display = 'none';
+                }
+                img.style.opacity = '0';
+                requestAnimationFrame(() => {
+                    img.style.transition = 'opacity 0.3s ease';
+                    img.style.opacity = '1';
+                });
+            };
+            fallbackImg.onerror = function() {
+                console.error(`回退图片也加载失败: ${fallbackUrl}`);
+                if (loadingPlaceholder) {
+                    loadingPlaceholder.innerHTML = '<div class="image-error">图片加载失败<br><button onclick="location.reload()" style="margin-top:10px;padding:8px 16px;background:#667eea;color:white;border:none;border-radius:4px;cursor:pointer;">重试</button></div>';
+                }
+            };
+            fallbackImg.src = fallbackUrl;
+        } else {
+            if (loadingPlaceholder) {
+                loadingPlaceholder.innerHTML = '<div class="image-error">图片加载失败<br><button onclick="location.reload()" style="margin-top:10px;padding:8px 16px;background:#667eea;color:white;border:none;border-radius:4px;cursor:pointer;">重试</button></div>';
+            }
         }
     }
     
