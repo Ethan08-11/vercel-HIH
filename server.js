@@ -43,16 +43,28 @@ app.use(express.static(__dirname, {
         // 为不同文件类型设置正确的 Content-Type 和缓存策略
         if (filePath.endsWith('.html')) {
             res.setHeader('Content-Type', 'text/html; charset=utf-8');
-            // HTML 文件使用短期缓存，确保更新能及时生效
-            res.setHeader('Cache-Control', 'public, max-age=3600, must-revalidate');
+            // HTML 文件在开发环境不缓存，生产环境短期缓存
+            if (process.env.NODE_ENV === 'production') {
+                res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate'); // 5分钟缓存
+            } else {
+                res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate'); // 开发环境不缓存
+            }
         } else if (filePath.endsWith('.css')) {
             res.setHeader('Content-Type', 'text/css; charset=utf-8');
-            // CSS 文件长期缓存，通过版本号控制更新
-            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            // CSS 文件：生产环境长期缓存，开发环境不缓存
+            if (process.env.NODE_ENV === 'production') {
+                res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            } else {
+                res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+            }
         } else if (filePath.endsWith('.js')) {
             res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-            // JS 文件长期缓存，通过版本号控制更新
-            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            // JS 文件：生产环境长期缓存，开发环境不缓存
+            if (process.env.NODE_ENV === 'production') {
+                res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            } else {
+                res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+            }
         } else if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) {
             res.setHeader('Content-Type', 'image/jpeg');
             // 图片文件长期缓存
@@ -140,6 +152,15 @@ app.get('/', (req, res) => {
         console.log('__dirname:', __dirname);
         const indexPath = path.join(__dirname, 'index.html');
         console.log('index.html 路径:', indexPath);
+        
+        // 设置HTML文件的缓存头
+        if (process.env.NODE_ENV === 'production') {
+            res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate'); // 5分钟缓存
+        } else {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        }
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        
         res.sendFile('index.html', { root: __dirname }, (err) => {
             if (err) {
                 console.error('发送 index.html 失败:', err);
@@ -157,6 +178,13 @@ app.get('/', (req, res) => {
 // 确保所有静态资源都能正确加载
 app.get('/index.html', (req, res) => {
     console.log('请求 /index.html');
+    // 设置HTML文件的缓存头
+    if (process.env.NODE_ENV === 'production') {
+        res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
+    } else {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.sendFile('index.html', { root: __dirname });
 });
 

@@ -6,6 +6,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="format-detection" content="telephone=no">
+    <!-- 防止浏览器缓存HTML -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>HIH教堂设计产品调查问卷</title>
     <!-- 资源提示：预连接和预加载优化 -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -16,7 +20,8 @@
     <!-- 预加载第二张图片（提高切换速度） -->
     <link rel="preload" as="image" href="/Picture/2.webp" type="image/webp" fetchpriority="low">
     <link rel="preload" as="image" href="/Picture/2.jpg" type="image/jpeg" fetchpriority="low">
-    <link rel="stylesheet" href="/style.css">
+    <!-- 添加版本号防止缓存 -->
+    <link rel="stylesheet" href="/style.css?v=20241205">
 </head>
 <body>
     <div class="container">
@@ -86,7 +91,8 @@
             
         })();
     </script>
-    <script src="/script.js"></script>
+    <!-- 添加版本号防止缓存 -->
+    <script src="/script.js?v=20241205"></script>
 </body>
 </html>
 
