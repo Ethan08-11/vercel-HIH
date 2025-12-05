@@ -618,6 +618,72 @@ app.post('/api/heart-count', async (req, res) => {
     }
 });
 
+// 全局变量，用于存储服务器实例
+let serverInstance = null;
+let isShuttingDown = false;
+
+// 优雅关闭服务器
+async function gracefulShutdown(signal) {
+    if (isShuttingDown) {
+        console.log('⚠️  正在关闭中，忽略重复信号...');
+        return;
+    }
+    
+    isShuttingDown = true;
+    console.log(`\n📡 收到 ${signal} 信号，开始优雅关闭服务器...`);
+    
+    // 设置关闭超时（30秒）
+    const shutdownTimeout = setTimeout(() => {
+        console.error('❌ 优雅关闭超时，强制退出');
+        process.exit(1);
+    }, 30000);
+    
+    try {
+        // 1. 停止接受新连接
+        if (serverInstance) {
+            console.log('🛑 停止接受新连接...');
+            serverInstance.close(() => {
+                console.log('✅ HTTP服务器已关闭');
+            });
+        }
+        
+        // 2. 关闭数据库连接
+        console.log('🔌 关闭数据库连接...');
+        await db.disconnectDB();
+        console.log('✅ 数据库连接已关闭');
+        
+        // 清除超时
+        clearTimeout(shutdownTimeout);
+        
+        console.log('✅ 服务器已优雅关闭');
+        process.exit(0);
+    } catch (error) {
+        console.error('❌ 关闭过程中出错:', error);
+        clearTimeout(shutdownTimeout);
+        process.exit(1);
+    }
+}
+
+// 注册信号处理器
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// 处理未捕获的异常
+process.on('uncaughtException', (error) => {
+    console.error('❌ 未捕获的异常:', error);
+    gracefulShutdown('uncaughtException').catch(() => {
+        process.exit(1);
+    });
+});
+
+// 处理未处理的Promise拒绝
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ 未处理的Promise拒绝:', reason);
+    gracefulShutdown('unhandledRejection').catch(() => {
+        process.exit(1);
+    });
+});
+
 // 初始化数据库连接（在服务器启动时）
 async function initServer() {
     console.log('\n🚀 开始初始化服务器...');
@@ -669,7 +735,7 @@ async function initServer() {
     }
     
     // 启动服务器（带端口占用检测）
-    const server = app.listen(PORT, '0.0.0.0', () => {
+    serverInstance = app.listen(PORT, '0.0.0.0', () => {
         const networkInterfaces = os.networkInterfaces();
         let localIP = 'localhost';
         
@@ -726,6 +792,9 @@ async function initServer() {
             process.exit(1);
         }
     });
+    
+    // 保存服务器实例到全局变量
+    return serverInstance;
 }
 
 module.exports = app;
