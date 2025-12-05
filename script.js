@@ -22,7 +22,7 @@ const productImages = [
     },
     {
         id: 4,
-        image: '/Picture/4.webp',
+        image: '/Picture/4.jpg',
         fallback: '/Picture/4.jpg',
         name: '镜子'
     },
@@ -37,6 +37,102 @@ const productImages = [
         image: '/Picture/6.webp',
         fallback: '/Picture/6.jpg',
         name: '充电宝'
+    },
+    {
+        id: 7,
+        image: '/Picture/7.jpg',
+        fallback: '/Picture/7.jpg',
+        name: '产品7'
+    },
+    {
+        id: 8,
+        image: '/Picture/8.jpg',
+        fallback: '/Picture/8.jpg',
+        name: '产品8'
+    },
+    {
+        id: 9,
+        image: '/Picture/9.jpg',
+        fallback: '/Picture/9.jpg',
+        name: '产品9'
+    },
+    {
+        id: 10,
+        image: '/Picture/10.jpg',
+        fallback: '/Picture/10.jpg',
+        name: '产品10'
+    },
+    {
+        id: 11,
+        image: '/Picture/11.jpg',
+        fallback: '/Picture/11.jpg',
+        name: '产品11'
+    },
+    {
+        id: 12,
+        image: '/Picture/12.jpg',
+        fallback: '/Picture/12.jpg',
+        name: '产品12'
+    },
+    {
+        id: 13,
+        image: '/Picture/13.jpg',
+        fallback: '/Picture/13.jpg',
+        name: '产品13'
+    },
+    {
+        id: 14,
+        image: '/Picture/14.jpg',
+        fallback: '/Picture/14.jpg',
+        name: '产品14'
+    },
+    {
+        id: 15,
+        image: '/Picture/15.jpg',
+        fallback: '/Picture/15.jpg',
+        name: '产品15'
+    },
+    {
+        id: 16,
+        image: '/Picture/16.jpg',
+        fallback: '/Picture/16.jpg',
+        name: '产品16'
+    },
+    {
+        id: 17,
+        image: '/Picture/17.jpg',
+        fallback: '/Picture/17.jpg',
+        name: '产品17'
+    },
+    {
+        id: 18,
+        image: '/Picture/18.jpg',
+        fallback: '/Picture/18.jpg',
+        name: '产品18'
+    },
+    {
+        id: 19,
+        image: '/Picture/19.jpg',
+        fallback: '/Picture/19.jpg',
+        name: '产品19'
+    },
+    {
+        id: 20,
+        image: '/Picture/20.jpg',
+        fallback: '/Picture/20.jpg',
+        name: '产品20'
+    },
+    {
+        id: 21,
+        image: '/Picture/21.jpg',
+        fallback: '/Picture/21.jpg',
+        name: '产品21'
+    },
+    {
+        id: 22,
+        image: '/Picture/22.jpg',
+        fallback: '/Picture/22.jpg',
+        name: '产品22'
     }
 ];
 
