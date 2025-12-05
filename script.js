@@ -22,7 +22,7 @@ const productImages = [
     },
     {
         id: 4,
-        image: '/Picture/4.jpg',
+        image: '/Picture/4.webp',
         fallback: '/Picture/4.jpg',
         name: '镜子'
     },
@@ -40,97 +40,97 @@ const productImages = [
     },
     {
         id: 7,
-        image: '/Picture/7.jpg',
+        image: '/Picture/7.webp',
         fallback: '/Picture/7.jpg',
         name: '产品7'
     },
     {
         id: 8,
-        image: '/Picture/8.jpg',
+        image: '/Picture/8.webp',
         fallback: '/Picture/8.jpg',
         name: '产品8'
     },
     {
         id: 9,
-        image: '/Picture/9.jpg',
+        image: '/Picture/9.webp',
         fallback: '/Picture/9.jpg',
         name: '产品9'
     },
     {
         id: 10,
-        image: '/Picture/10.jpg',
+        image: '/Picture/10.webp',
         fallback: '/Picture/10.jpg',
         name: '产品10'
     },
     {
         id: 11,
-        image: '/Picture/11.jpg',
+        image: '/Picture/11.webp',
         fallback: '/Picture/11.jpg',
         name: '产品11'
     },
     {
         id: 12,
-        image: '/Picture/12.jpg',
+        image: '/Picture/12.webp',
         fallback: '/Picture/12.jpg',
         name: '产品12'
     },
     {
         id: 13,
-        image: '/Picture/13.jpg',
+        image: '/Picture/13.webp',
         fallback: '/Picture/13.jpg',
         name: '产品13'
     },
     {
         id: 14,
-        image: '/Picture/14.jpg',
+        image: '/Picture/14.webp',
         fallback: '/Picture/14.jpg',
         name: '产品14'
     },
     {
         id: 15,
-        image: '/Picture/15.jpg',
+        image: '/Picture/15.webp',
         fallback: '/Picture/15.jpg',
         name: '产品15'
     },
     {
         id: 16,
-        image: '/Picture/16.jpg',
+        image: '/Picture/16.webp',
         fallback: '/Picture/16.jpg',
         name: '产品16'
     },
     {
         id: 17,
-        image: '/Picture/17.jpg',
+        image: '/Picture/17.webp',
         fallback: '/Picture/17.jpg',
         name: '产品17'
     },
     {
         id: 18,
-        image: '/Picture/18.jpg',
+        image: '/Picture/18.webp',
         fallback: '/Picture/18.jpg',
         name: '产品18'
     },
     {
         id: 19,
-        image: '/Picture/19.jpg',
+        image: '/Picture/19.webp',
         fallback: '/Picture/19.jpg',
         name: '产品19'
     },
     {
         id: 20,
-        image: '/Picture/20.jpg',
+        image: '/Picture/20.webp',
         fallback: '/Picture/20.jpg',
         name: '产品20'
     },
     {
         id: 21,
-        image: '/Picture/21.jpg',
+        image: '/Picture/21.webp',
         fallback: '/Picture/21.jpg',
         name: '产品21'
     },
     {
         id: 22,
-        image: '/Picture/22.jpg',
+        image: '/Picture/22.webp',
         fallback: '/Picture/22.jpg',
         name: '产品22'
     }
