@@ -8,6 +8,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const compression = require('compression');
 const db = require('./db');
 
 const app = express();
@@ -17,30 +18,75 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+// 启用压缩（gzip/brotli）- 必须在静态文件服务之前
+app.use(compression({
+    filter: (req, res) => {
+        // 如果请求头中明确要求不压缩，则不压缩
+        if (req.headers['x-no-compression']) {
+            return false;
+        }
+        // 默认压缩所有文本资源（HTML、CSS、JS等）
+        // 图片通常已经压缩，不需要再次压缩
+        return true;
+    },
+    level: 6, // 压缩级别 1-9，6 是平衡点
+    threshold: 1024 // 只压缩大于 1KB 的文件
+}));
+
 // 提供静态文件服务（必须在所有路由之前）
 // 使用 express.static 处理所有静态文件
 app.use(express.static(__dirname, {
+    maxAge: '1y', // 设置长期缓存（1年）
+    etag: true, // 启用 ETag
+    lastModified: true, // 启用 Last-Modified
     setHeaders: (res, filePath) => {
-        // 为不同文件类型设置正确的 Content-Type
+        // 为不同文件类型设置正确的 Content-Type 和缓存策略
         if (filePath.endsWith('.html')) {
             res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            // HTML 文件使用短期缓存，确保更新能及时生效
+            res.setHeader('Cache-Control', 'public, max-age=3600, must-revalidate');
         } else if (filePath.endsWith('.css')) {
             res.setHeader('Content-Type', 'text/css; charset=utf-8');
+            // CSS 文件长期缓存，通过版本号控制更新
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         } else if (filePath.endsWith('.js')) {
             res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+            // JS 文件长期缓存，通过版本号控制更新
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         } else if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) {
             res.setHeader('Content-Type', 'image/jpeg');
+            // 图片文件长期缓存
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else if (filePath.endsWith('.webp')) {
+            res.setHeader('Content-Type', 'image/webp');
+            // WebP 图片长期缓存
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else if (filePath.endsWith('.png')) {
+            res.setHeader('Content-Type', 'image/png');
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         }
     },
     index: false // 不自动提供 index.html，由路由处理
 }));
 
-// 确保 Picture 目录可访问
+// 确保 Picture 目录可访问，并设置图片缓存
 app.use('/Picture', express.static(path.join(__dirname, 'Picture'), {
+    maxAge: '1y', // 图片长期缓存
+    etag: true,
+    lastModified: true,
     setHeaders: (res, filePath) => {
+        // 设置图片的 Content-Type 和缓存策略
         if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) {
             res.setHeader('Content-Type', 'image/jpeg');
+        } else if (filePath.endsWith('.webp')) {
+            res.setHeader('Content-Type', 'image/webp');
+        } else if (filePath.endsWith('.png')) {
+            res.setHeader('Content-Type', 'image/png');
         }
+        // 所有图片都使用长期缓存
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        // 添加 CORS 头，允许跨域访问（如果需要）
+        res.setHeader('Access-Control-Allow-Origin', '*');
     }
 }));
 
@@ -622,8 +668,8 @@ async function initServer() {
         }
     }
     
-    // 启动服务器
-    app.listen(PORT, '0.0.0.0', () => {
+    // 启动服务器（带端口占用检测）
+    const server = app.listen(PORT, '0.0.0.0', () => {
         const networkInterfaces = os.networkInterfaces();
         let localIP = 'localhost';
         
@@ -659,6 +705,26 @@ async function initServer() {
         console.log('  GET  /api/export - 导出所有数据为JSON文件');
         console.log('  GET  /api/heart-counts - 获取所有产品的爱心数量');
         console.log('  POST /api/heart-count - 更新产品的爱心数量（同时记录点击历史）');
+    }).on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            console.error(`\n❌ 错误: 端口 ${PORT} 已被占用`);
+            console.error(`\n解决方案:`);
+            console.error(`1. 关闭占用端口的进程:`);
+            if (process.platform === 'win32') {
+                console.error(`   Windows: netstat -ano | findstr :${PORT}`);
+                console.error(`   然后: taskkill /F /PID <PID>`);
+            } else {
+                console.error(`   Linux/Mac: lsof -i :${PORT}`);
+                console.error(`   然后: kill -9 <PID>`);
+            }
+            console.error(`\n2. 或使用其他端口:`);
+            console.error(`   Windows: set PORT=3001 && npm start`);
+            console.error(`   Linux/Mac: PORT=3001 npm start`);
+            process.exit(1);
+        } else {
+            console.error('服务器启动失败:', err);
+            process.exit(1);
+        }
     });
 }
 
