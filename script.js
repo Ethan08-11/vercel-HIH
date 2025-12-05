@@ -173,22 +173,34 @@ function supportsWebP() {
     }
 }
 
-// 获取图片 URL（支持 WebP 回退，移动端优先使用JPG）
+// 图片版本号，用于强制刷新缓存（更新图片时修改此版本号）
+const IMAGE_VERSION = '20241205';
+
+// 获取图片 URL（支持 WebP 回退，移动端优先使用JPG，添加版本号防止缓存）
 function getImageUrl(item) {
     const isMobile = isMobileDevice();
     const isSlow = isSlowNetwork();
     
+    // 添加版本号查询参数，防止浏览器缓存
+    const addVersion = (url) => {
+        if (!url) return url;
+        const separator = url.includes('?') ? '&' : '?';
+        return `${url}${separator}v=${IMAGE_VERSION}`;
+    };
+    
     // 移动端或低速网络优先使用JPG（更快更稳定）
     if (isMobile || isSlow) {
         console.log('移动端/低速网络：优先使用JPG格式');
-        return item.fallback || item.image.replace('.webp', '.jpg');
+        const jpgUrl = item.fallback || item.image.replace('.webp', '.jpg');
+        return addVersion(jpgUrl);
     }
     
     // 桌面端：如果浏览器支持 WebP，使用 WebP，否则使用 JPG
     if (supportsWebP() && item.image) {
-        return item.image;
+        return addVersion(item.image);
     }
-    return item.fallback || item.image.replace('.webp', '.jpg');
+    const jpgUrl = item.fallback || item.image.replace('.webp', '.jpg');
+    return addVersion(jpgUrl);
 }
 
 // 存储用户答案
@@ -266,7 +278,11 @@ function createProductCard(item, index) {
     
     // 获取图片 URL（支持 WebP 回退）
     const imageUrl = getImageUrl(item);
-    const fallbackUrl = item.fallback || imageUrl.replace('.webp', '.jpg');
+    // 生成fallback URL，确保也包含版本号
+    const baseFallback = item.fallback || item.image.replace('.webp', '.jpg');
+    const fallbackUrl = baseFallback.includes('?') 
+        ? baseFallback 
+        : `${baseFallback}?v=${IMAGE_VERSION}`;
     
     // 检测是否为移动设备（用于设置加载策略）
     const isMobile = isMobileDevice();
@@ -889,7 +905,11 @@ function preloadImage(index) {
     img.dataset.preloading = 'true';
     const item = productImages[index];
     const imageUrl = getImageUrl(item);
-    const fallbackUrl = item.fallback || imageUrl.replace('.webp', '.jpg');
+    // 生成fallback URL，确保也包含版本号
+    const baseFallback = item.fallback || item.image.replace('.webp', '.jpg');
+    const fallbackUrl = baseFallback.includes('?') 
+        ? baseFallback 
+        : `${baseFallback}?v=${IMAGE_VERSION}`;
     
     // 先在data属性中保存URL，供后续加载使用
     if (img.dataset.src) {
@@ -977,12 +997,19 @@ async function loadImage(index) {
     
     // 优先使用 data-src（懒加载设置的值），如果没有则重新获取
     let imageUrl = img.dataset.src || getImageUrl(item);
-    let fallbackUrl = img.dataset.fallback || item.fallback || imageUrl.replace('.webp', '.jpg');
+    // 生成fallback URL，确保也包含版本号
+    let baseFallback = img.dataset.fallback || item.fallback || item.image.replace('.webp', '.jpg');
+    let fallbackUrl = baseFallback.includes('?') 
+        ? baseFallback 
+        : `${baseFallback}?v=${IMAGE_VERSION}`;
     
     // 如果没有 data-src，重新获取 URL
     if (!img.dataset.src) {
         imageUrl = getImageUrl(item);
-        fallbackUrl = item.fallback || imageUrl.replace('.webp', '.jpg');
+        baseFallback = item.fallback || item.image.replace('.webp', '.jpg');
+        fallbackUrl = baseFallback.includes('?') 
+            ? baseFallback 
+            : `${baseFallback}?v=${IMAGE_VERSION}`;
         img.dataset.src = imageUrl;
         img.dataset.fallback = fallbackUrl;
     }
