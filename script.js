@@ -423,10 +423,11 @@ function createProductCard(item, index) {
     imageContainer.className = 'product-image-container';
     
     // 立即设置容器样式，防止首次加载时布局偏移
+    // 最大化高度，减少留白
     imageContainer.style.width = '100%';
-    imageContainer.style.height = '75vh';
-    imageContainer.style.minHeight = '70vh';
-    imageContainer.style.maxHeight = '85vh';
+    imageContainer.style.height = 'calc(100vh - 20px)';
+    imageContainer.style.minHeight = 'calc(100vh - 30px)';
+    imageContainer.style.maxHeight = 'calc(100vh - 10px)';
     imageContainer.style.position = 'relative';
     imageContainer.style.display = 'block';
     imageContainer.style.overflow = 'hidden';

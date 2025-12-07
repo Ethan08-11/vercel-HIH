@@ -22,7 +22,7 @@ body {
     background: white;
     border-radius: 0;
     box-shadow: none;
-    padding: 20px;
+    padding: 5px;
     position: relative;
     display: flex;
     flex-direction: column;
@@ -33,7 +33,7 @@ body {
 
 /* 进度条 */
 .progress-container {
-    margin-bottom: 10px;
+    margin-bottom: 5px;
     flex-shrink: 0;
 }
 
@@ -50,8 +50,8 @@ body {
 .carousel-container {
     position: relative;
     overflow: hidden;
-    border-radius: 15px;
-    margin-bottom: 15px;
+    border-radius: 10px;
+    margin-bottom: 5px;
     flex: 1 1 auto;
     min-height: 0;
     display: flex;
@@ -99,16 +99,16 @@ body {
 
 .product-image-container {
     width: 100%;
-    /* 固定高度，防止图片加载时布局偏移 */
-    height: 75vh;
-    min-height: 70vh;
-    max-height: 85vh;
+    /* 固定高度，防止图片加载时布局偏移 - 最大化高度减少留白 */
+    height: calc(100vh - 20px);
+    min-height: calc(100vh - 30px);
+    max-height: calc(100vh - 10px);
     position: relative;
     cursor: pointer;
-    border-radius: 15px;
+    border-radius: 10px;
     overflow: hidden;
     transition: all 0.3s ease;
-    border: 4px solid transparent;
+    border: 2px solid transparent;
     background: #f8f9fa;
     padding: 0;
     flex-shrink: 0;
@@ -622,14 +622,15 @@ body {
 /* 响应式设计 - 平板 */
 @media (max-width: 1024px) and (min-width: 769px) {
     .container {
-        padding: 15px;
+        padding: 5px;
     }
 
     .product-image-container {
-        height: 75vh;
-        min-height: 70vh;
-        max-height: 85vh;
+        height: calc(100vh - 20px);
+        min-height: calc(100vh - 30px);
+        max-height: calc(100vh - 10px);
         padding: 0;
+        border: 2px solid transparent;
         /* 确保平板端也完全居中 */
         display: block;
         align-items: center;
@@ -704,7 +705,7 @@ body {
     }
 
     .progress-container {
-        margin-bottom: 8px;
+        margin-bottom: 3px;
     }
 
     .progress-bar {
@@ -712,16 +713,17 @@ body {
     }
 
     .carousel-container {
-        margin-bottom: 10px;
+        margin-bottom: 3px;
         border-radius: 10px;
     }
 
     .product-image-container {
-        height: 75vh;
-        min-height: 75vh;
-        max-height: 90vh;
+        height: calc(100vh - 15px);
+        min-height: calc(100vh - 20px);
+        max-height: calc(100vh - 10px);
         border-radius: 10px;
         padding: 0;
+        border: 2px solid transparent;
         /* 确保移动端也完全居中 */
         display: block;
         align-items: center;
@@ -800,9 +802,11 @@ body {
 /* 笔记本屏幕优化 */
 @media (min-width: 1025px) and (max-width: 1920px) {
     .product-image-container {
-        min-height: 75vh;
-        max-height: 88vh;
+        height: calc(100vh - 20px);
+        min-height: calc(100vh - 30px);
+        max-height: calc(100vh - 10px);
         padding: 0;
+        border: 2px solid transparent;
         /* 确保笔记本端也完全居中 */
         display: block;
         align-items: center;
@@ -827,10 +831,11 @@ body {
     }
 
     .product-image-container {
-        height: 80vh;
-        min-height: 80vh;
-        max-height: 90vh;
+        height: calc(100vh - 20px);
+        min-height: calc(100vh - 30px);
+        max-height: calc(100vh - 10px);
         padding: 0;
+        border: 2px solid transparent;
         /* 确保大屏端也完全居中 */
         display: block;
         align-items: center;
