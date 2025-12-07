@@ -39,38 +39,28 @@ app.use(express.static(__dirname, {
     maxAge: '1y', // 设置长期缓存（1年）
     etag: true, // 启用 ETag
     lastModified: true, // 启用 Last-Modified
-    setHeaders: (res, filePath) => {
+    setHeaders: (res, filePath, stat) => {
         // 为不同文件类型设置正确的 Content-Type 和缓存策略
         if (filePath.endsWith('.html')) {
             res.setHeader('Content-Type', 'text/html; charset=utf-8');
-            // HTML 文件在开发环境不缓存，生产环境短期缓存
-            if (process.env.NODE_ENV === 'production') {
-                res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate'); // 5分钟缓存
-            } else {
-                res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate'); // 开发环境不缓存
-            }
+            // HTML 文件强制不缓存，确保移动端及时更新
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
         } else if (filePath.endsWith('.css')) {
             res.setHeader('Content-Type', 'text/css; charset=utf-8');
-            // CSS 文件：如果URL中包含版本号，则不缓存；否则根据环境决定
-            if (req.url.includes('?v=')) {
-                // 带版本号的资源，强制不缓存，确保移动端及时更新
-                res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
-                res.setHeader('Pragma', 'no-cache');
-                res.setHeader('Expires', '0');
-            } else if (process.env.NODE_ENV === 'production') {
+            // CSS 文件：根据环境决定缓存策略
+            // 注意：版本号检查需要在路由层面处理，这里统一设置
+            if (process.env.NODE_ENV === 'production') {
                 res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
             } else {
                 res.setHeader('Cache-Control', 'no-cache, must-revalidate');
             }
         } else if (filePath.endsWith('.js')) {
             res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-            // JS 文件：如果URL中包含版本号，则不缓存；否则根据环境决定
-            if (req.url.includes('?v=')) {
-                // 带版本号的资源，强制不缓存，确保移动端及时更新
-                res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
-                res.setHeader('Pragma', 'no-cache');
-                res.setHeader('Expires', '0');
-            } else if (process.env.NODE_ENV === 'production') {
+            // JS 文件：根据环境决定缓存策略
+            // 注意：版本号检查需要在路由层面处理，这里统一设置
+            if (process.env.NODE_ENV === 'production') {
                 res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
             } else {
                 res.setHeader('Cache-Control', 'no-cache, must-revalidate');
@@ -117,14 +107,41 @@ console.log('根目录:', __dirname);
 console.log('Picture 目录:', path.join(__dirname, 'Picture'));
 
 // 明确处理静态文件路由（作为备用，express.static 应该已经处理了）
+// 处理带版本号的 CSS 和 JS 文件，强制不缓存
 app.get('/style.css', (req, res) => {
     console.log('请求 /style.css');
+    // 如果URL中包含版本号，强制不缓存
+    if (req.url.includes('?v=')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+    }
+    res.setHeader('Content-Type', 'text/css; charset=utf-8');
     res.sendFile('style.css', { root: __dirname }, (err) => {
         if (err) {
             console.error('发送 style.css 失败:', err);
             res.status(404).send('File not found');
         } else {
             console.log('style.css 发送成功');
+        }
+    });
+});
+
+app.get('/script.js', (req, res) => {
+    console.log('请求 /script.js');
+    // 如果URL中包含版本号，强制不缓存
+    if (req.url.includes('?v=')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+    }
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.sendFile('script.js', { root: __dirname }, (err) => {
+        if (err) {
+            console.error('发送 script.js 失败:', err);
+            res.status(404).send('File not found');
+        } else {
+            console.log('script.js 发送成功');
         }
     });
 });
