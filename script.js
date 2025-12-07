@@ -323,6 +323,18 @@ async function initQuestionnaire() {
     console.log('开始从服务器加载爱心数量...');
     await loadHeartCountsFromServer();
     
+    // 确保轮播容器样式正确
+    const carouselContainer = carouselWrapper.parentElement;
+    if (carouselContainer) {
+        carouselContainer.style.overflow = 'hidden';
+        carouselContainer.style.width = '100%';
+        carouselContainer.style.position = 'relative';
+    }
+    carouselWrapper.style.display = 'flex';
+    carouselWrapper.style.width = 'auto';
+    carouselWrapper.style.minWidth = '100%';
+    carouselWrapper.style.overflow = 'visible';
+    
     // 创建所有产品卡片（此时heartCounts已经有数据了）
     productImages.forEach((item, index) => {
         const card = createProductCard(item, index);
@@ -337,15 +349,54 @@ async function initQuestionnaire() {
         }
     });
     
-    // 显示第一个产品
-    showProduct(0);
-    updateProgress();
-    updateNavButtons();
+    // 等待一帧确保DOM完全渲染
+    requestAnimationFrame(() => {
+        // 再次确保轮播容器宽度正确
+        const carouselContainer = carouselWrapper.parentElement;
+        if (carouselContainer) {
+            const containerWidth = carouselContainer.offsetWidth || window.innerWidth;
+            const allCards = carouselWrapper.querySelectorAll('.product-card');
+            allCards.forEach(card => {
+                card.style.minWidth = `${containerWidth}px`;
+                card.style.width = `${containerWidth}px`;
+                card.style.flexShrink = '0';
+                card.style.flexBasis = `${containerWidth}px`;
+            });
+        }
+        
+        // 显示第一个产品
+        showProduct(0);
+        updateProgress();
+        updateNavButtons();
+    });
     
     // 定期从服务器同步爱心数量（每10秒）
     setInterval(async () => {
         await loadHeartCountsFromServer();
     }, 10000);
+    
+    // 监听窗口大小变化，重新计算轮播位置
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            if (currentIndex !== undefined) {
+                const carouselContainer = carouselWrapper.parentElement;
+                if (carouselContainer) {
+                    const containerWidth = carouselContainer.offsetWidth || window.innerWidth;
+                    const allCards = carouselWrapper.querySelectorAll('.product-card');
+                    allCards.forEach(card => {
+                        card.style.minWidth = `${containerWidth}px`;
+                        card.style.width = `${containerWidth}px`;
+                        card.style.flexShrink = '0';
+                        card.style.flexBasis = `${containerWidth}px`;
+                    });
+                    // 重新定位当前产品
+                    showProduct(currentIndex);
+                }
+            }
+        }, 100);
+    });
 }
 
 // 创建产品卡片
@@ -381,18 +432,19 @@ function createProductCard(item, index) {
     img.className = 'product-image';
     img.alt = item.name;
     
-    // 立即设置图片样式，使用绝对定位确保始终居中
-    img.style.position = 'absolute';
-    img.style.top = '50%';
-    img.style.left = '50%';
-    img.style.transform = 'translate(-50%, -50%) translateZ(0)';
-    img.style.webkitTransform = 'translate(-50%, -50%) translateZ(0)';
-    img.style.maxWidth = 'calc(100% - 20px)';
-    img.style.maxHeight = 'calc(75vh - 20px)';
+    // 立即设置图片样式，使用绝对定位确保始终居中（使用!important确保优先级）
+    img.style.setProperty('position', 'absolute', 'important');
+    img.style.setProperty('top', '50%', 'important');
+    img.style.setProperty('left', '50%', 'important');
+    img.style.setProperty('transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+    img.style.setProperty('-webkit-transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+    img.style.setProperty('max-width', 'calc(100% - 20px)', 'important');
+    img.style.setProperty('max-height', 'calc(75vh - 20px)', 'important');
     img.style.width = 'auto';
     img.style.height = 'auto';
     img.style.objectFit = 'contain';
-    img.style.display = 'block';
+    img.style.setProperty('display', 'block', 'important');
+    img.style.setProperty('margin', '0', 'important');
     
     // 获取图片 URL（支持 WebP 回退）
     const imageUrl = getImageUrl(item);
@@ -450,13 +502,14 @@ function createProductCard(item, index) {
             placeholder.style.display = 'none';
         }
         
-        // 确保图片使用绝对定位居中
-        this.style.position = 'absolute';
-        this.style.top = '50%';
-        this.style.left = '50%';
-        this.style.transform = 'translate(-50%, -50%) translateZ(0)';
-        this.style.webkitTransform = 'translate(-50%, -50%) translateZ(0)';
-        this.style.display = 'block';
+        // 确保图片使用绝对定位居中（使用!important确保优先级）
+        this.style.setProperty('position', 'absolute', 'important');
+        this.style.setProperty('top', '50%', 'important');
+        this.style.setProperty('left', '50%', 'important');
+        this.style.setProperty('transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+        this.style.setProperty('-webkit-transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+        this.style.setProperty('display', 'block', 'important');
+        this.style.setProperty('margin', '0', 'important');
         
         // 确保图片尺寸已确定，防止布局偏移
         if (this.naturalWidth && this.naturalHeight) {
@@ -465,12 +518,13 @@ function createProductCard(item, index) {
             // 使用 requestAnimationFrame 确保布局已完成
             requestAnimationFrame(() => {
                 requestAnimationFrame(() => {
-                    // 再次确保绝对定位居中
-                    this.style.position = 'absolute';
-                    this.style.top = '50%';
-                    this.style.left = '50%';
-                    this.style.transform = 'translate(-50%, -50%) translateZ(0)';
-                    this.style.webkitTransform = 'translate(-50%, -50%) translateZ(0)';
+                    // 再次确保绝对定位居中（使用!important确保优先级）
+                    this.style.setProperty('position', 'absolute', 'important');
+                    this.style.setProperty('top', '50%', 'important');
+                    this.style.setProperty('left', '50%', 'important');
+                    this.style.setProperty('transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+                    this.style.setProperty('-webkit-transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+                    this.style.setProperty('margin', '0', 'important');
                     this.style.transition = 'opacity 0.3s ease';
                     this.style.opacity = '1';
                 });
@@ -511,12 +565,13 @@ function createProductCard(item, index) {
         if (loadingPlaceholder) {
             loadingPlaceholder.style.display = 'none';
         }
-        // 确保图片使用绝对定位居中
-        img.style.position = 'absolute';
-        img.style.top = '50%';
-        img.style.left = '50%';
-        img.style.transform = 'translate(-50%, -50%) translateZ(0)';
-        img.style.webkitTransform = 'translate(-50%, -50%) translateZ(0)';
+        // 确保图片使用绝对定位居中（使用!important确保优先级）
+        img.style.setProperty('position', 'absolute', 'important');
+        img.style.setProperty('top', '50%', 'important');
+        img.style.setProperty('left', '50%', 'important');
+        img.style.setProperty('transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+        img.style.setProperty('-webkit-transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+        img.style.setProperty('margin', '0', 'important');
         // 确保图片可见
         img.style.opacity = '1';
         // 手动触发load事件以确保所有处理都完成
@@ -531,12 +586,13 @@ function createProductCard(item, index) {
                     if (loadingPlaceholder) {
                         loadingPlaceholder.style.display = 'none';
                     }
-                    // 确保图片使用绝对定位居中
-                    img.style.position = 'absolute';
-                    img.style.top = '50%';
-                    img.style.left = '50%';
-                    img.style.transform = 'translate(-50%, -50%) translateZ(0)';
-                    img.style.webkitTransform = 'translate(-50%, -50%) translateZ(0)';
+                    // 确保图片使用绝对定位居中（使用!important确保优先级）
+                    img.style.setProperty('position', 'absolute', 'important');
+                    img.style.setProperty('top', '50%', 'important');
+                    img.style.setProperty('left', '50%', 'important');
+                    img.style.setProperty('transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+                    img.style.setProperty('-webkit-transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+                    img.style.setProperty('margin', '0', 'important');
                     img.style.opacity = '1';
                 }
             }
@@ -1175,12 +1231,13 @@ async function loadImage(index) {
         if (loadingPlaceholder) {
             loadingPlaceholder.style.display = 'none';
         }
-        // 确保图片使用绝对定位居中
-        img.style.position = 'absolute';
-        img.style.top = '50%';
-        img.style.left = '50%';
-        img.style.transform = 'translate(-50%, -50%) translateZ(0)';
-        img.style.webkitTransform = 'translate(-50%, -50%) translateZ(0)';
+        // 确保图片使用绝对定位居中（使用!important确保优先级）
+        img.style.setProperty('position', 'absolute', 'important');
+        img.style.setProperty('top', '50%', 'important');
+        img.style.setProperty('left', '50%', 'important');
+        img.style.setProperty('transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+        img.style.setProperty('-webkit-transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+        img.style.setProperty('margin', '0', 'important');
         
         // 触发加载事件以确保图片显示
         // 确保图片尺寸已确定，防止布局偏移
@@ -1188,17 +1245,25 @@ async function loadImage(index) {
             img.style.opacity = '0';
             requestAnimationFrame(() => {
                 requestAnimationFrame(() => {
-                    // 再次确保绝对定位居中
-                    img.style.position = 'absolute';
-                    img.style.top = '50%';
-                    img.style.left = '50%';
-                    img.style.transform = 'translate(-50%, -50%) translateZ(0)';
-                    img.style.webkitTransform = 'translate(-50%, -50%) translateZ(0)';
+                    // 再次确保绝对定位居中（使用!important确保优先级）
+                    img.style.setProperty('position', 'absolute', 'important');
+                    img.style.setProperty('top', '50%', 'important');
+                    img.style.setProperty('left', '50%', 'important');
+                    img.style.setProperty('transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+                    img.style.setProperty('-webkit-transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+                    img.style.setProperty('margin', '0', 'important');
                     img.style.transition = 'opacity 0.3s ease';
                     img.style.opacity = '1';
                 });
             });
         } else {
+            // 确保图片使用绝对定位居中（使用!important确保优先级）
+            img.style.setProperty('position', 'absolute', 'important');
+            img.style.setProperty('top', '50%', 'important');
+            img.style.setProperty('left', '50%', 'important');
+            img.style.setProperty('transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+            img.style.setProperty('-webkit-transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+            img.style.setProperty('margin', '0', 'important');
             img.style.opacity = '1';
         }
         return;
@@ -1224,29 +1289,38 @@ async function loadImage(index) {
                 if (loadingPlaceholder) {
                     loadingPlaceholder.style.display = 'none';
                 }
-                // 确保图片使用绝对定位居中
-                img.style.position = 'absolute';
-                img.style.top = '50%';
-                img.style.left = '50%';
-                img.style.transform = 'translate(-50%, -50%) translateZ(0)';
-                img.style.webkitTransform = 'translate(-50%, -50%) translateZ(0)';
+                // 确保图片使用绝对定位居中（使用!important确保优先级）
+                img.style.setProperty('position', 'absolute', 'important');
+                img.style.setProperty('top', '50%', 'important');
+                img.style.setProperty('left', '50%', 'important');
+                img.style.setProperty('transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+                img.style.setProperty('-webkit-transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+                img.style.setProperty('margin', '0', 'important');
                 
                 // 确保图片尺寸已确定，防止布局偏移
                 if (img.naturalWidth && img.naturalHeight) {
                     img.style.opacity = '0';
                     requestAnimationFrame(() => {
                         requestAnimationFrame(() => {
-                            // 再次确保绝对定位居中
-                            img.style.position = 'absolute';
-                            img.style.top = '50%';
-                            img.style.left = '50%';
-                            img.style.transform = 'translate(-50%, -50%) translateZ(0)';
-                            img.style.webkitTransform = 'translate(-50%, -50%) translateZ(0)';
+                            // 再次确保绝对定位居中（使用!important确保优先级）
+                            img.style.setProperty('position', 'absolute', 'important');
+                            img.style.setProperty('top', '50%', 'important');
+                            img.style.setProperty('left', '50%', 'important');
+                            img.style.setProperty('transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+                            img.style.setProperty('-webkit-transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+                            img.style.setProperty('margin', '0', 'important');
                             img.style.transition = 'opacity 0.3s ease';
                             img.style.opacity = '1';
                         });
                     });
                 } else {
+                    // 确保图片使用绝对定位居中（使用!important确保优先级）
+                    img.style.setProperty('position', 'absolute', 'important');
+                    img.style.setProperty('top', '50%', 'important');
+                    img.style.setProperty('left', '50%', 'important');
+                    img.style.setProperty('transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+                    img.style.setProperty('-webkit-transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+                    img.style.setProperty('margin', '0', 'important');
                     img.style.opacity = '1';
                 }
             };
@@ -1309,8 +1383,40 @@ function showProduct(index) {
     
     currentIndex = index;
     const carouselWrapper = document.getElementById('carouselWrapper');
-    const translateX = -index * 100;
-    carouselWrapper.style.transform = `translateX(${translateX}%)`;
+    if (!carouselWrapper) return;
+    
+    // 确保轮播容器宽度正确
+    const carouselContainer = carouselWrapper.parentElement;
+    if (carouselContainer) {
+        carouselContainer.style.overflow = 'hidden';
+        carouselContainer.style.width = '100%';
+        carouselContainer.style.position = 'relative';
+    }
+    
+    // 确保轮播包装器正确设置
+    carouselWrapper.style.display = 'flex';
+    carouselWrapper.style.width = 'auto';
+    carouselWrapper.style.minWidth = '100%';
+    carouselWrapper.style.overflow = 'visible';
+    
+    // 确保所有产品卡片宽度正确（相对于容器宽度）
+    const containerWidth = carouselContainer ? carouselContainer.offsetWidth : window.innerWidth;
+    const allCards = carouselWrapper.querySelectorAll('.product-card');
+    allCards.forEach(card => {
+        card.style.minWidth = `${containerWidth}px`;
+        card.style.width = `${containerWidth}px`;
+        card.style.flexShrink = '0';
+        card.style.flexBasis = `${containerWidth}px`;
+    });
+    
+    // 计算并应用transform，确保只显示当前产品
+    // 使用容器宽度来计算，确保精确移动
+    const translateX = -index * containerWidth;
+    carouselWrapper.style.transform = `translateX(${translateX}px)`;
+    carouselWrapper.style.willChange = 'transform';
+    
+    // 强制重新计算布局
+    carouselWrapper.offsetHeight;
     
     // 加载当前图片（懒加载）
     loadImage(index);
