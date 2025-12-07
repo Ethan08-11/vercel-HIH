@@ -90,11 +90,19 @@
             }
             
             // 清理浏览器缓存（移动端特别需要）
+            // 注意：不要清理所有缓存，只清理过期的，避免影响图片加载
             if ('caches' in window) {
                 caches.keys().then(function(names) {
+                    // 只清理非图片相关的缓存，保留图片缓存以提高加载速度
                     for (let name of names) {
-                        caches.delete(name);
-                        console.log('缓存已清理:', name);
+                        // 跳过图片相关的缓存
+                        if (!name.includes('image') && !name.includes('Picture')) {
+                            caches.delete(name).then(function(success) {
+                                if (success) {
+                                    console.log('缓存已清理:', name);
+                                }
+                            });
+                        }
                     }
                 });
             }

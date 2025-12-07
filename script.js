@@ -323,6 +323,14 @@ const CLICK_DEBOUNCE_DELAY = 500; // 点击防抖延迟（毫秒），防止快�
 async function initQuestionnaire() {
     const carouselWrapper = document.getElementById('carouselWrapper');
     
+    // 如果已经初始化过，先清空容器（刷新时）
+    if (carouselWrapper.hasChildNodes()) {
+        console.log('检测到刷新，清空现有内容...');
+        carouselWrapper.innerHTML = '';
+        // 重置全局状态
+        currentIndex = undefined;
+    }
+    
     // 先尝试从服务器加载爱心数量（如果失败，使用默认值）
     console.log('开始从服务器加载爱心数量...');
     await loadHeartCountsFromServer();
@@ -492,8 +500,12 @@ function createProductCard(item, index) {
         }, 10000);
         
         // 检查图片是否已经加载完成（可能从缓存中）
-        if (img.complete && img.naturalWidth > 0) {
-            // 图片已经在缓存中，立即显示
+        // 注意：刷新后不要依赖缓存检查，强制重新加载
+        const isRefresh = window.performance && window.performance.navigation && 
+                         (window.performance.navigation.type === 1 || window.performance.navigation.type === 255);
+        
+        if (!isRefresh && img.complete && img.naturalWidth > 0 && img.src === imageUrl) {
+            // 图片已经在缓存中且URL匹配，立即显示（非刷新情况）
             clearTimeout(loadTimeout);
             img.dataset.loaded = 'true';
             img.style.opacity = '1';
@@ -502,6 +514,7 @@ function createProductCard(item, index) {
             }
         } else {
             // 图片需要加载，设置src并监听load事件
+            // 刷新时强制重新加载，不使用缓存检查
             img.src = imageUrl;
             const handleLoad = function() {
                 clearTimeout(loadTimeout);
@@ -1297,8 +1310,40 @@ async function loadImage(index) {
     const img = card.querySelector('.product-image');
     if (!img) return;
     
-    // 如果图片已经加载，直接返回
-    if (img.dataset.loaded === 'true') return;
+    // 检查是否是刷新操作（使用多种方法检测，提高兼容性）
+    const isRefresh = (window.performance && window.performance.navigation && 
+                      (window.performance.navigation.type === 1 || window.performance.navigation.type === 255)) ||
+                     (window.performance && window.performance.getEntriesByType && 
+                      window.performance.getEntriesByType('navigation')[0] && 
+                      window.performance.getEntriesByType('navigation')[0].type === 'reload');
+    
+    // 如果是刷新，重置加载状态，强制重新加载
+    if (isRefresh) {
+        console.log(`刷新检测：重置图片 ${index + 1} 的加载状态`);
+        img.dataset.loaded = 'false';
+        img.dataset.preloaded = 'false';
+        img.dataset.src = '';
+        img.dataset.fallback = '';
+        // 清空src并强制重新加载
+        img.removeAttribute('src');
+        img.src = '';
+        img.style.opacity = '0';
+        // 移除所有可能的事件监听器（通过克隆节点）
+        const imgParent = img.parentNode;
+        const imgNextSibling = img.nextSibling;
+        const imgClone = img.cloneNode(false);
+        imgParent.removeChild(img);
+        imgParent.insertBefore(imgClone, imgNextSibling);
+        // 重新获取img引用
+        img = card.querySelector('.product-image');
+        if (!img) {
+            console.error(`无法找到图片元素 ${index + 1}`);
+            return;
+        }
+    } else {
+        // 如果图片已经加载，直接返回
+        if (img.dataset.loaded === 'true') return;
+    }
     
     // 显示加载占位符
     const loadingPlaceholder = card.querySelector('.image-loading');
@@ -1308,27 +1353,26 @@ async function loadImage(index) {
     
     const item = productImages[index];
     
-    // 优先使用 data-src（懒加载设置的值），如果没有则重新获取
-    let imageUrl = img.dataset.src || getImageUrl(item);
-    // 生成fallback URL，确保也包含版本号
-    let baseFallback = img.dataset.fallback || item.fallback || item.image.replace('.webp', '.jpg');
-    let fallbackUrl = baseFallback.includes('?') 
-        ? baseFallback 
-        : `${baseFallback}?v=${IMAGE_VERSION}`;
-    
-    // 如果没有 data-src，重新获取 URL
-    if (!img.dataset.src) {
-        imageUrl = getImageUrl(item);
-        baseFallback = item.fallback || item.image.replace('.webp', '.jpg');
-        fallbackUrl = baseFallback.includes('?') 
+    // 刷新时或没有 data-src，重新获取 URL
+    if (!img.dataset.src || isRefresh) {
+        const imageUrl = getImageUrl(item);
+        const baseFallback = item.fallback || item.image.replace('.webp', '.jpg');
+        const fallbackUrl = baseFallback.includes('?') 
             ? baseFallback 
             : `${baseFallback}?v=${IMAGE_VERSION}`;
         img.dataset.src = imageUrl;
         img.dataset.fallback = fallbackUrl;
     }
     
-    // 如果已经预加载，直接使用
-    if (img.dataset.preloaded === 'true') {
+    // 获取图片URL
+    let imageUrl = img.dataset.src || getImageUrl(item);
+    let baseFallback = img.dataset.fallback || item.fallback || item.image.replace('.webp', '.jpg');
+    let fallbackUrl = baseFallback.includes('?') 
+        ? baseFallback 
+        : `${baseFallback}?v=${IMAGE_VERSION}`;
+    
+    // 如果已经预加载且不是刷新，直接使用
+    if (!isRefresh && img.dataset.preloaded === 'true') {
         const preloadUrl = img.dataset.preloadFallback || imageUrl;
         // 检查预加载的图片是否已经加载完成
         if (img.src === preloadUrl && img.complete && img.naturalWidth > 0) {
