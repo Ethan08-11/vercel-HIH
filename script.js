@@ -318,7 +318,7 @@ let updateLocks = {}; // 防止并发更新的锁 { productIndex: isUpdating }
 let lastUpdateTime = {}; // 记录每个产品的最后更新时间 { productIndex: timestamp }
 let loadingQueue = []; // 图片加载队列，控制并发加载数量
 let activeLoads = 0; // 当前正在加载的图片数量
-const MAX_CONCURRENT_LOADS = isMobileDevice() ? 2 : 4; // 移动端最多2个并发，桌面端4个
+const MAX_CONCURRENT_LOADS = isMobileDevice() ? 3 : 4; // 移动端最多3个并发，桌面端4个（提高移动端加载速度）
 let clickTimers = {}; // 点击防抖定时器 { productIndex: timer }
 const CLICK_DEBOUNCE_DELAY = 500; // 点击防抖延迟（毫秒），防止快速点击
 
@@ -464,41 +464,48 @@ function createProductCard(item, index) {
     // 检测是否为移动设备（用于设置加载策略）
     const isMobile = isMobileDevice();
     
-    // 移动端不使用懒加载，立即加载以提高速度
-    img.loading = isMobile ? 'eager' : 'lazy';
+    // 移动端优化：前3张图片立即加载，提高首屏速度
+    // 桌面端：第一张立即加载，其他懒加载
+    const shouldLoadImmediately = isMobile ? (index < 3) : (index === 0);
     
-    // 使用 data-src 存储图片路径，实现懒加载
-    // 只对第一张图片立即加载，其他图片延迟加载
-    if (index === 0) {
-        // 第一张图片立即加载
+    if (shouldLoadImmediately) {
+        // 立即加载的图片
+        img.loading = 'eager';
+        // 使用 fetchPriority 优化加载优先级（如果浏览器支持）
+        if ('fetchPriority' in img) {
+            img.fetchPriority = index === 0 ? 'high' : 'auto';
+        }
         img.src = imageUrl;
         img.dataset.loaded = 'false';
-        img.dataset.src = imageUrl; // 同时保存到data-src，供loadImage函数使用
+        img.dataset.src = imageUrl;
         img.dataset.fallback = fallbackUrl;
-        // 第一张图片显示加载占位符
+        // 显示加载占位符
         if (loadingPlaceholder) {
             loadingPlaceholder.style.display = 'flex';
         }
     } else {
-        // 其他图片使用懒加载
+        // 懒加载的图片
+        img.loading = 'lazy';
+        if ('fetchPriority' in img) {
+            img.fetchPriority = 'low';
+        }
         img.dataset.src = imageUrl;
         img.dataset.fallback = fallbackUrl;
         img.dataset.loaded = 'false';
-        loadingPlaceholder.style.display = 'none'; // 未加载的图片先隐藏占位符
+        if (loadingPlaceholder) {
+            loadingPlaceholder.style.display = 'none';
+        }
     }
     
-    // 预加载策略优化：移动端减少预加载，桌面端正常预加载
+    // 预加载策略优化：移动端预加载前3张，桌面端预加载前2张
     if (index === 0) {
-        // 第一张立即加载
-        if (!isMobile) {
-            // 桌面端：预加载第二张
-            setTimeout(() => {
-                if (productImages.length > 1) {
-                    preloadImage(1);
-                }
-            }, 500);
-        }
-        // 移动端：不预加载，减少初始加载负担，专注于当前图片
+        // 第一张加载后，立即预加载后续图片
+        setTimeout(() => {
+            const preloadCount = isMobile ? 2 : 1; // 移动端预加载2张，桌面端1张
+            for (let i = 1; i <= preloadCount && i < productImages.length; i++) {
+                preloadImage(i);
+            }
+        }, isMobile ? 200 : 500); // 移动端更快开始预加载
     }
     
     // 图片加载完成事件（统一处理所有图片）
@@ -1136,9 +1143,9 @@ function preloadImage(index) {
     
     const preloadImg = new Image();
     
-    // 设置超时，移动端使用更短超时
+    // 设置超时，移动端使用更短超时，但不要太短避免误判
     const isMobile = isMobileDevice();
-    const timeoutDuration = isMobile ? 6000 : 10000;
+    const timeoutDuration = isMobile ? 8000 : 10000; // 移动端8秒，桌面端10秒
     const timeout = setTimeout(() => {
         preloadImg.onload = null;
         preloadImg.onerror = null;
@@ -1345,19 +1352,27 @@ async function loadImage(index) {
         }
     }
     
-    // 预加载策略优化：移动端只预加载下一张，桌面端预加载相邻图片
+    // 预加载策略优化：移动端预加载下一张和再下一张，桌面端预加载相邻图片
     const isMobile = isMobileDevice();
     const nextIndex = index + 1;
+    const nextNextIndex = index + 2; // 移动端也预加载再下一张
     const prevIndex = index - 1;
     
     // 预加载下一张（移动端和桌面端都预加载，确保最后几张也能加载）
     if (nextIndex < productImages.length) {
-        // 移动端：延迟预加载，避免阻塞当前图片
+        // 移动端：延迟预加载，避免阻塞当前图片，但延迟时间缩短以提高速度
         // 桌面端：立即预加载
-        const delay = isMobile ? 800 : 0;
+        const delay = isMobile ? 300 : 0;
         setTimeout(() => {
             preloadImage(nextIndex);
         }, delay);
+    }
+    
+    // 移动端：也预加载再下一张，提高连续切换速度
+    if (isMobile && nextNextIndex < productImages.length) {
+        setTimeout(() => {
+            preloadImage(nextNextIndex);
+        }, 600);
     }
     
     // 桌面端：也预加载上一张（移动端不预加载，节省资源）
