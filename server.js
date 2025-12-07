@@ -720,39 +720,67 @@ async function initServer() {
     console.log('   PORT:', process.env.PORT || 3000);
     console.log('   MONGODB_URI:', process.env.MONGODB_URI ? `已配置 (长度: ${process.env.MONGODB_URI.length})` : '未配置');
     
-    // 尝试连接数据库
+    // 尝试连接数据库（不阻塞服务器启动）
     console.log('\n📡 尝试连接数据库...');
-    const dbConnection = await db.connectDB();
+    let dbConnection = null;
     
-    if (dbConnection) {
-        console.log('✅ 数据库连接成功');
-    } else {
-        console.error('❌ 数据库连接失败');
-        if (!process.env.MONGODB_URI) {
-            console.error('   原因: MONGODB_URI 环境变量未设置');
-            console.error('   解决方案: 在Zeabur环境变量中配置MONGODB_URI');
+    // 使用 Promise.race 设置超时，避免长时间等待
+    try {
+        const connectPromise = db.connectDB();
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('连接超时')), 35000)
+        );
+        
+        dbConnection = await Promise.race([connectPromise, timeoutPromise]);
+        
+        if (dbConnection) {
+            console.log('✅ 数据库连接成功');
         } else {
-            console.error('   原因: 可能是连接字符串错误或网络问题');
-            console.error('   建议: 检查MONGODB_URI格式和网络连接');
+            console.warn('⚠️  数据库连接失败，服务器将继续运行（使用文件系统存储）');
+            if (!process.env.MONGODB_URI) {
+                console.warn('   原因: MONGODB_URI 环境变量未设置');
+                console.warn('   解决方案: 在Zeabur环境变量中配置MONGODB_URI');
+            } else {
+                console.warn('   原因: 可能是连接字符串错误或网络问题');
+                console.warn('   建议: 检查MONGODB_URI格式和网络连接');
+                console.warn('   注意: 服务器将继续运行，数据将保存到本地文件系统');
+            }
         }
+    } catch (error) {
+        console.warn('⚠️  数据库连接超时或失败，服务器将继续运行（使用文件系统存储）');
+        console.warn('   错误:', error.message);
+        dbConnection = null;
     }
     
-    // 初始化所有产品的爱心数量
+    // 初始化所有产品的爱心数量（异步执行，不阻塞服务器启动）
     if (process.env.MONGODB_URI && dbConnection) {
         const productIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]; // 根据实际产品ID调整
-        try {
-            console.log('\n📊 初始化产品爱心数量...');
-            await db.initHeartCounts(productIds);
-            console.log('✅ 爱心数量已初始化');
-            
-            // 验证初始化结果
-            const counts = await db.getHeartCounts();
-            console.log('📊 初始化后的爱心数量:', counts);
-        } catch (error) {
-            console.error('❌ 初始化爱心数量失败:', error);
-            console.error('错误详情:', error.message);
-            console.error('错误堆栈:', error.stack);
-        }
+        // 使用异步执行，不阻塞服务器启动
+        (async () => {
+            try {
+                console.log('\n📊 初始化产品爱心数量...');
+                await db.initHeartCounts(productIds);
+                console.log('✅ 爱心数量已初始化');
+                
+                // 验证初始化结果
+                const counts = await db.getHeartCounts();
+                const countKeys = Object.keys(counts || {});
+                console.log(`📊 初始化后的爱心数量: 共 ${countKeys.length} 个产品`);
+                if (countKeys.length > 0 && countKeys.length <= 10) {
+                    console.log('   详情:', counts);
+                } else if (countKeys.length > 10) {
+                    console.log('   前10个产品:', Object.fromEntries(Object.entries(counts).slice(0, 10)));
+                }
+            } catch (error) {
+                console.error('❌ 初始化爱心数量失败:', error);
+                console.error('错误详情:', error.message);
+                if (error.stack) {
+                    console.error('错误堆栈:', error.stack);
+                }
+                // 不阻止服务器启动，继续运行
+                console.warn('⚠️  服务器将继续运行，但爱心数量可能未正确初始化');
+            }
+        })();
     } else {
         if (!process.env.MONGODB_URI) {
             console.warn('⚠️  MONGODB_URI未配置，无法初始化爱心数量');
@@ -762,64 +790,84 @@ async function initServer() {
         }
     }
     
-    // 启动服务器（带端口占用检测）
-    serverInstance = app.listen(PORT, '0.0.0.0', () => {
-        const networkInterfaces = os.networkInterfaces();
-        let localIP = 'localhost';
+    // 启动服务器（带端口占用检测和自动重试）
+    const startServer = (port, retryCount = 0) => {
+        const maxRetries = 5; // 最多尝试5个端口
         
-        // 获取局域网IP地址
-        for (const interfaceName in networkInterfaces) {
-            const interfaces = networkInterfaces[interfaceName];
-            for (const iface of interfaces) {
-                if (iface.family === 'IPv4' && !iface.internal) {
-                    localIP = iface.address;
-                    break;
+        serverInstance = app.listen(port, '0.0.0.0', () => {
+            const networkInterfaces = os.networkInterfaces();
+            let localIP = 'localhost';
+            
+            // 获取局域网IP地址
+            for (const interfaceName in networkInterfaces) {
+                const interfaces = networkInterfaces[interfaceName];
+                for (const iface of interfaces) {
+                    if (iface.family === 'IPv4' && !iface.internal) {
+                        localIP = iface.address;
+                        break;
+                    }
                 }
+                if (localIP !== 'localhost') break;
             }
-            if (localIP !== 'localhost') break;
-        }
-        
-        console.log(`\n服务器运行成功！`);
-        console.log(`本地访问: http://localhost:${PORT}`);
-        console.log(`局域网访问: http://${localIP}:${PORT}`);
-        console.log(`\n在手机/平板上访问: http://${localIP}:${PORT}`);
-        
-        if (process.env.MONGODB_URI) {
-            console.log(`\n✅ 数据库: MongoDB (已连接)`);
-        } else {
-            console.log(`\n⚠️  数据库: 未配置 (使用文件系统，仅本地开发)`);
-            console.log(`   数据保存目录: ${dataDir}`);
-            console.log(`   产品分类目录: ${productsDir}`);
-        }
-        
-        console.log('\n可用API:');
-        console.log('  POST /api/submit - 提交问卷');
-        console.log('  GET  /api/submissions - 获取所有提交记录');
-        console.log('  GET  /api/products/:productId - 获取指定产品的提交记录');
-        console.log('  GET  /api/export - 导出所有数据为JSON文件');
-        console.log('  GET  /api/heart-counts - 获取所有产品的爱心数量');
-        console.log('  POST /api/heart-count - 更新产品的爱心数量（同时记录点击历史）');
-    }).on('error', (err) => {
-        if (err.code === 'EADDRINUSE') {
-            console.error(`\n❌ 错误: 端口 ${PORT} 已被占用`);
-            console.error(`\n解决方案:`);
-            console.error(`1. 关闭占用端口的进程:`);
-            if (process.platform === 'win32') {
-                console.error(`   Windows: netstat -ano | findstr :${PORT}`);
-                console.error(`   然后: taskkill /F /PID <PID>`);
+            
+            console.log(`\n✅ 服务器运行成功！`);
+            if (port !== PORT) {
+                console.log(`⚠️  注意: 端口 ${PORT} 被占用，已自动切换到端口 ${port}`);
+            }
+            console.log(`本地访问: http://localhost:${port}`);
+            console.log(`局域网访问: http://${localIP}:${port}`);
+            console.log(`\n在手机/平板上访问: http://${localIP}:${port}`);
+            
+            if (process.env.MONGODB_URI && dbConnection) {
+                console.log(`\n✅ 数据库: MongoDB (已连接)`);
+            } else if (process.env.MONGODB_URI) {
+                console.log(`\n⚠️  数据库: MongoDB (连接失败，使用文件系统)`);
             } else {
-                console.error(`   Linux/Mac: lsof -i :${PORT}`);
-                console.error(`   然后: kill -9 <PID>`);
+                console.log(`\n⚠️  数据库: 未配置 (使用文件系统，仅本地开发)`);
+                console.log(`   数据保存目录: ${dataDir}`);
+                console.log(`   产品分类目录: ${productsDir}`);
             }
-            console.error(`\n2. 或使用其他端口:`);
-            console.error(`   Windows: set PORT=3001 && npm start`);
-            console.error(`   Linux/Mac: PORT=3001 npm start`);
-            process.exit(1);
-        } else {
-            console.error('服务器启动失败:', err);
-            process.exit(1);
-        }
-    });
+            
+            console.log('\n可用API:');
+            console.log('  POST /api/submit - 提交问卷');
+            console.log('  GET  /api/submissions - 获取所有提交记录');
+            console.log('  GET  /api/products/:productId - 获取指定产品的提交记录');
+            console.log('  GET  /api/export - 导出所有数据为JSON文件');
+            console.log('  GET  /api/heart-counts - 获取所有产品的爱心数量');
+            console.log('  POST /api/heart-count - 更新产品的爱心数量（同时记录点击历史）');
+        }).on('error', (err) => {
+            if (err.code === 'EADDRINUSE') {
+                if (retryCount < maxRetries) {
+                    const nextPort = port + 1;
+                    console.warn(`\n⚠️  端口 ${port} 已被占用，尝试端口 ${nextPort}...`);
+                    // 递归尝试下一个端口
+                    setTimeout(() => startServer(nextPort, retryCount + 1), 500);
+                } else {
+                    console.error(`\n❌ 错误: 已尝试 ${maxRetries + 1} 个端口，全部被占用`);
+                    console.error(`\n解决方案:`);
+                    console.error(`1. 关闭占用端口的进程:`);
+                    if (process.platform === 'win32') {
+                        console.error(`   Windows: netstat -ano | findstr :${PORT}`);
+                        console.error(`   然后: taskkill /F /PID <PID>`);
+                    } else {
+                        console.error(`   Linux/Mac: lsof -i :${PORT}`);
+                        console.error(`   然后: kill -9 <PID>`);
+                    }
+                    console.error(`\n2. 或手动指定其他端口:`);
+                    console.error(`   Windows: set PORT=3001 && npm start`);
+                    console.error(`   Linux/Mac: PORT=3001 npm start`);
+                    process.exit(1);
+                }
+            } else {
+                console.error('❌ 服务器启动失败:', err);
+                console.error('错误详情:', err.message);
+                process.exit(1);
+            }
+        });
+    };
+    
+    // 开始启动服务器
+    startServer(PORT);
     
     // 保存服务器实例到全局变量
     return serverInstance;
@@ -829,6 +877,13 @@ module.exports = app;
 
 // 本地开发时启动服务器
 if (require.main === module) {
-    initServer().catch(console.error);
+    initServer().catch((error) => {
+        console.error('❌ 服务器启动失败:', error);
+        console.error('错误详情:', error.message);
+        if (error.stack) {
+            console.error('错误堆栈:', error.stack);
+        }
+        process.exit(1);
+    });
 }
 

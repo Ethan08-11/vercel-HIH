@@ -357,6 +357,15 @@ function createProductCard(item, index) {
     const imageContainer = document.createElement('div');
     imageContainer.className = 'product-image-container';
     
+    // 立即设置容器样式，防止首次加载时布局偏移
+    imageContainer.style.width = '100%';
+    imageContainer.style.height = '75vh';
+    imageContainer.style.minHeight = '70vh';
+    imageContainer.style.maxHeight = '85vh';
+    imageContainer.style.position = 'relative';
+    imageContainer.style.display = 'block';
+    imageContainer.style.overflow = 'hidden';
+    
     // 统一使用click事件，CSS的touch-action: manipulation已经防止了双击缩放
     imageContainer.onclick = () => selectProduct(index);
     
@@ -371,6 +380,19 @@ function createProductCard(item, index) {
     const img = document.createElement('img');
     img.className = 'product-image';
     img.alt = item.name;
+    
+    // 立即设置图片样式，使用绝对定位确保始终居中
+    img.style.position = 'absolute';
+    img.style.top = '50%';
+    img.style.left = '50%';
+    img.style.transform = 'translate(-50%, -50%) translateZ(0)';
+    img.style.webkitTransform = 'translate(-50%, -50%) translateZ(0)';
+    img.style.maxWidth = 'calc(100% - 20px)';
+    img.style.maxHeight = 'calc(75vh - 20px)';
+    img.style.width = 'auto';
+    img.style.height = 'auto';
+    img.style.objectFit = 'contain';
+    img.style.display = 'block';
     
     // 获取图片 URL（支持 WebP 回退）
     const imageUrl = getImageUrl(item);
@@ -427,12 +449,36 @@ function createProductCard(item, index) {
         if (placeholder) {
             placeholder.style.display = 'none';
         }
-        // 淡入动画
-        this.style.opacity = '0';
-        requestAnimationFrame(() => {
-            this.style.transition = 'opacity 0.3s ease';
+        
+        // 确保图片使用绝对定位居中
+        this.style.position = 'absolute';
+        this.style.top = '50%';
+        this.style.left = '50%';
+        this.style.transform = 'translate(-50%, -50%) translateZ(0)';
+        this.style.webkitTransform = 'translate(-50%, -50%) translateZ(0)';
+        this.style.display = 'block';
+        
+        // 确保图片尺寸已确定，防止布局偏移
+        if (this.naturalWidth && this.naturalHeight) {
+            // 图片已加载，淡入动画
+            this.style.opacity = '0';
+            // 使用 requestAnimationFrame 确保布局已完成
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    // 再次确保绝对定位居中
+                    this.style.position = 'absolute';
+                    this.style.top = '50%';
+                    this.style.left = '50%';
+                    this.style.transform = 'translate(-50%, -50%) translateZ(0)';
+                    this.style.webkitTransform = 'translate(-50%, -50%) translateZ(0)';
+                    this.style.transition = 'opacity 0.3s ease';
+                    this.style.opacity = '1';
+                });
+            });
+        } else {
+            // 如果尺寸未确定，直接显示
             this.style.opacity = '1';
-        });
+        }
     }, { once: true });
     
     // 统一图片加载错误处理
@@ -465,6 +511,12 @@ function createProductCard(item, index) {
         if (loadingPlaceholder) {
             loadingPlaceholder.style.display = 'none';
         }
+        // 确保图片使用绝对定位居中
+        img.style.position = 'absolute';
+        img.style.top = '50%';
+        img.style.left = '50%';
+        img.style.transform = 'translate(-50%, -50%) translateZ(0)';
+        img.style.webkitTransform = 'translate(-50%, -50%) translateZ(0)';
         // 确保图片可见
         img.style.opacity = '1';
         // 手动触发load事件以确保所有处理都完成
@@ -479,6 +531,12 @@ function createProductCard(item, index) {
                     if (loadingPlaceholder) {
                         loadingPlaceholder.style.display = 'none';
                     }
+                    // 确保图片使用绝对定位居中
+                    img.style.position = 'absolute';
+                    img.style.top = '50%';
+                    img.style.left = '50%';
+                    img.style.transform = 'translate(-50%, -50%) translateZ(0)';
+                    img.style.webkitTransform = 'translate(-50%, -50%) translateZ(0)';
                     img.style.opacity = '1';
                 }
             }
@@ -1117,12 +1175,32 @@ async function loadImage(index) {
         if (loadingPlaceholder) {
             loadingPlaceholder.style.display = 'none';
         }
+        // 确保图片使用绝对定位居中
+        img.style.position = 'absolute';
+        img.style.top = '50%';
+        img.style.left = '50%';
+        img.style.transform = 'translate(-50%, -50%) translateZ(0)';
+        img.style.webkitTransform = 'translate(-50%, -50%) translateZ(0)';
+        
         // 触发加载事件以确保图片显示
-        img.style.opacity = '0';
-        requestAnimationFrame(() => {
-            img.style.transition = 'opacity 0.3s ease';
+        // 确保图片尺寸已确定，防止布局偏移
+        if (img.naturalWidth && img.naturalHeight) {
+            img.style.opacity = '0';
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    // 再次确保绝对定位居中
+                    img.style.position = 'absolute';
+                    img.style.top = '50%';
+                    img.style.left = '50%';
+                    img.style.transform = 'translate(-50%, -50%) translateZ(0)';
+                    img.style.webkitTransform = 'translate(-50%, -50%) translateZ(0)';
+                    img.style.transition = 'opacity 0.3s ease';
+                    img.style.opacity = '1';
+                });
+            });
+        } else {
             img.style.opacity = '1';
-        });
+        }
         return;
     }
     
@@ -1146,11 +1224,31 @@ async function loadImage(index) {
                 if (loadingPlaceholder) {
                     loadingPlaceholder.style.display = 'none';
                 }
-                img.style.opacity = '0';
-                requestAnimationFrame(() => {
-                    img.style.transition = 'opacity 0.3s ease';
+                // 确保图片使用绝对定位居中
+                img.style.position = 'absolute';
+                img.style.top = '50%';
+                img.style.left = '50%';
+                img.style.transform = 'translate(-50%, -50%) translateZ(0)';
+                img.style.webkitTransform = 'translate(-50%, -50%) translateZ(0)';
+                
+                // 确保图片尺寸已确定，防止布局偏移
+                if (img.naturalWidth && img.naturalHeight) {
+                    img.style.opacity = '0';
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            // 再次确保绝对定位居中
+                            img.style.position = 'absolute';
+                            img.style.top = '50%';
+                            img.style.left = '50%';
+                            img.style.transform = 'translate(-50%, -50%) translateZ(0)';
+                            img.style.webkitTransform = 'translate(-50%, -50%) translateZ(0)';
+                            img.style.transition = 'opacity 0.3s ease';
+                            img.style.opacity = '1';
+                        });
+                    });
+                } else {
                     img.style.opacity = '1';
-                });
+                }
             };
             fallbackImg.onerror = function() {
                 console.error(`回退图片也加载失败: ${fallbackUrl}`);

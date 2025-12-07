@@ -43,10 +43,13 @@ async function connectDB() {
         console.log('   数据库名称:', DB_NAME);
         
         client = new MongoClient(MONGODB_URI, {
-            serverSelectionTimeoutMS: 10000, // 10秒超时（Zeabur可能需要更长时间）
-            connectTimeoutMS: 15000, // 15秒连接超时
+            serverSelectionTimeoutMS: 30000, // 30秒超时（增加超时时间以应对网络延迟）
+            connectTimeoutMS: 30000, // 30秒连接超时
+            socketTimeoutMS: 45000, // 45秒socket超时
             maxPoolSize: 10, // 连接池大小
             minPoolSize: 1,
+            retryWrites: true, // 启用重试写入
+            retryReads: true, // 启用重试读取
         });
         
         await client.connect();
