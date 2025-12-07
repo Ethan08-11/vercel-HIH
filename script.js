@@ -4,39 +4,39 @@
 const productImages = [
     {
         id: 1,
-        image: '/Picture/1.webp', // WebP 格式，自动回退到 JPG
+        image: '/Picture/1.webp',
         fallback: '/Picture/1.jpg',
-        name: '玩偶'
+        name: '产品1'
     },
     {
         id: 2,
         image: '/Picture/2.webp',
         fallback: '/Picture/2.jpg',
-        name: '蓝色单肩包'
+        name: '产品2'
     },
     {
         id: 3,
         image: '/Picture/3.webp',
         fallback: '/Picture/3.jpg',
-        name: '白色单肩包'
+        name: '产品3'
     },
     {
         id: 4,
         image: '/Picture/4.webp',
         fallback: '/Picture/4.jpg',
-        name: '镜子'
+        name: '产品4'
     },
     {
         id: 5,
         image: '/Picture/5.webp',
         fallback: '/Picture/5.jpg',
-        name: '石膏香片'
+        name: '产品5'
     },
     {
         id: 6,
         image: '/Picture/6.webp',
         fallback: '/Picture/6.jpg',
-        name: '充电宝'
+        name: '产品6'
     },
     {
         id: 7,
