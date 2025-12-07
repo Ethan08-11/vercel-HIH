@@ -731,10 +731,11 @@ async function initServer() {
     let dbConnection = null;
     
     // 使用 Promise.race 设置超时，避免长时间等待
+    // 在 Zeabur 上，缩短超时时间，避免启动时间过长
     try {
         const connectPromise = db.connectDB();
         const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('连接超时')), 35000)
+            setTimeout(() => reject(new Error('连接超时')), 15000) // 缩短到15秒
         );
         
         dbConnection = await Promise.race([connectPromise, timeoutPromise]);
@@ -756,6 +757,7 @@ async function initServer() {
         console.warn('⚠️  数据库连接超时或失败，服务器将继续运行（使用文件系统存储）');
         console.warn('   错误:', error.message);
         dbConnection = null;
+        // 确保即使数据库连接失败，也不阻止服务器启动
     }
     
     // 初始化所有产品的爱心数量（异步执行，不阻塞服务器启动）
@@ -797,8 +799,9 @@ async function initServer() {
     }
     
     // 启动服务器（带端口占用检测和自动重试）
+    // 在 Zeabur 上，只使用指定的 PORT，不自动切换端口
     const startServer = (port, retryCount = 0) => {
-        const maxRetries = 5; // 最多尝试5个端口
+        const maxRetries = process.env.ZEABUR ? 0 : 5; // Zeabur 上不重试，本地开发最多5次
         
         serverInstance = app.listen(port, '0.0.0.0', () => {
             const networkInterfaces = os.networkInterfaces();
@@ -867,6 +870,9 @@ async function initServer() {
             } else {
                 console.error('❌ 服务器启动失败:', err);
                 console.error('错误详情:', err.message);
+                if (err.stack) {
+                    console.error('错误堆栈:', err.stack);
+                }
                 process.exit(1);
             }
         });
@@ -883,13 +889,21 @@ module.exports = app;
 
 // 本地开发时启动服务器
 if (require.main === module) {
-    initServer().catch((error) => {
-        console.error('❌ 服务器启动失败:', error);
-        console.error('错误详情:', error.message);
-        if (error.stack) {
-            console.error('错误堆栈:', error.stack);
+    // 使用 try-catch 包装，确保所有错误都被捕获
+    (async () => {
+        try {
+            await initServer();
+        } catch (error) {
+            console.error('❌ 服务器启动失败:', error);
+            console.error('错误详情:', error.message);
+            if (error.stack) {
+                console.error('错误堆栈:', error.stack);
+            }
+            // 在 Zeabur 上，即使启动失败也要等待一段时间，让日志输出
+            setTimeout(() => {
+                process.exit(1);
+            }, 2000);
         }
-        process.exit(1);
-    });
+    })();
 }
 

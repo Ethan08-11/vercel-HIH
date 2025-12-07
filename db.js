@@ -42,10 +42,14 @@ async function connectDB() {
         console.log('   连接字符串长度:', MONGODB_URI.length);
         console.log('   数据库名称:', DB_NAME);
         
+        // 在 Zeabur 上使用更短的超时时间，避免启动时间过长
+        const isZeabur = process.env.ZEABUR || process.env.VERCEL || process.env.RAILWAY;
+        const timeout = isZeabur ? 10000 : 30000; // Zeabur 上10秒，本地30秒
+        
         client = new MongoClient(MONGODB_URI, {
-            serverSelectionTimeoutMS: 30000, // 30秒超时（增加超时时间以应对网络延迟）
-            connectTimeoutMS: 30000, // 30秒连接超时
-            socketTimeoutMS: 45000, // 45秒socket超时
+            serverSelectionTimeoutMS: timeout, // 超时时间
+            connectTimeoutMS: timeout, // 连接超时
+            socketTimeoutMS: timeout + 5000, // socket超时稍长
             maxPoolSize: 10, // 连接池大小
             minPoolSize: 1,
             retryWrites: true, // 启用重试写入
