@@ -6,10 +6,16 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="format-detection" content="telephone=no">
-    <!-- 防止浏览器缓存HTML -->
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <!-- 防止浏览器缓存HTML - 特别针对移动端和平板 -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate, max-age=0">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
+    <!-- 针对iOS Safari的额外缓存控制 -->
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <!-- 防止移动端缓存 -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>HIH教堂设计产品调查问卷</title>
     <!-- 资源提示：预连接和预加载优化 -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -20,8 +26,8 @@
     <!-- 预加载第二张图片（提高切换速度） -->
     <link rel="preload" as="image" href="/Picture/2.webp" type="image/webp" fetchpriority="low">
     <link rel="preload" as="image" href="/Picture/2.jpg" type="image/jpeg" fetchpriority="low">
-    <!-- 添加版本号防止缓存 -->
-    <link rel="stylesheet" href="/style.css?v=20241205">
+    <!-- 添加版本号防止缓存 - 使用时间戳确保移动端及时更新 -->
+    <link rel="stylesheet" href="/style.css?v=202412051200">
 </head>
 <body>
     <div class="container">
@@ -66,12 +72,42 @@
 
     <script>
         // 内联诊断脚本 - 确保即使外部 JS 失败也能显示错误
+        // 同时清理移动端缓存，确保及时更新
         (function() {
             console.log('HTML 已加载，开始检查资源...');
             
+            // 清理可能的 Service Worker 缓存（如果有）
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                    for(let registration of registrations) {
+                        registration.unregister().then(function(success) {
+                            if (success) {
+                                console.log('Service Worker 已清理');
+                            }
+                        });
+                    }
+                });
+            }
+            
+            // 清理浏览器缓存（移动端特别需要）
+            if ('caches' in window) {
+                caches.keys().then(function(names) {
+                    for (let name of names) {
+                        caches.delete(name);
+                        console.log('缓存已清理:', name);
+                    }
+                });
+            }
+            
             // 检查 script.js 是否加载
-            const scriptTag = document.querySelector('script[src="/script.js"]');
+            const scriptTag = document.querySelector('script[src*="script.js"]');
             if (scriptTag) {
+                // 添加时间戳防止缓存
+                const scriptSrc = scriptTag.getAttribute('src');
+                if (!scriptSrc.includes('?v=')) {
+                    scriptTag.setAttribute('src', scriptSrc + '?v=' + Date.now());
+                }
+                
                 scriptTag.onerror = function() {
                     console.error('script.js 加载失败！');
                     document.body.innerHTML = '<div style="padding: 20px; text-align: center; color: red;"><h2>错误：script.js 加载失败</h2><p>请检查网络连接或联系管理员</p></div>';
@@ -82,8 +118,14 @@
             }
             
             // 检查 style.css 是否加载
-            const linkTag = document.querySelector('link[href="/style.css"]');
+            const linkTag = document.querySelector('link[href*="style.css"]');
             if (linkTag) {
+                // 添加时间戳防止缓存
+                const linkHref = linkTag.getAttribute('href');
+                if (!linkHref.includes('?v=')) {
+                    linkTag.setAttribute('href', linkHref + '?v=' + Date.now());
+                }
+                
                 linkTag.onerror = function() {
                     console.error('style.css 加载失败！');
                 };
@@ -91,8 +133,8 @@
             
         })();
     </script>
-    <!-- 添加版本号防止缓存 -->
-    <script src="/script.js?v=20241205-2"></script>
+    <!-- 添加版本号防止缓存 - 使用时间戳确保移动端及时更新 -->
+    <script src="/script.js?v=202412051200"></script>
 </body>
 </html>
 
