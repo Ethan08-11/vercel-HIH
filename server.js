@@ -474,7 +474,7 @@ app.get('/api/heart-counts', async (req, res) => {
             if (!dbConnection) {
                 console.error('❌ 数据库连接失败，返回默认值');
                 // 连接失败时返回默认值，但不重置
-                const allProductIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
+                const allProductIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38];
                 const defaultCounts = {};
                 allProductIds.forEach(productId => {
                     defaultCounts[productId] = 2000;
@@ -491,7 +491,7 @@ app.get('/api/heart-counts', async (req, res) => {
             console.log('📊 从数据库获取爱心数量:', counts);
             
             // 确保所有产品都有数据（如果数据库中没有，返回默认值2000）
-            const allProductIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
+            const allProductIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38];
             const result = {};
             allProductIds.forEach(productId => {
                 // 如果数据库中有数据，使用数据库数据；否则使用2000
@@ -512,7 +512,7 @@ app.get('/api/heart-counts', async (req, res) => {
         
         // 如果没有数据库，返回所有产品的默认值2000
         console.warn('⚠️ MongoDB未配置，返回默认爱心数量');
-        const allProductIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
+        const allProductIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38];
         const defaultCounts = {};
         allProductIds.forEach(productId => {
             defaultCounts[productId] = 2000;
@@ -527,7 +527,7 @@ app.get('/api/heart-counts', async (req, res) => {
         console.error('❌ 获取爱心数量时出错:', error);
         console.error('错误堆栈:', error.stack);
         // 即使出错，也返回默认值，避免前端重置
-        const allProductIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
+        const allProductIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38];
         const defaultCounts = {};
         allProductIds.forEach(productId => {
             defaultCounts[productId] = 2000;
@@ -739,7 +739,7 @@ async function initServer() {
     
     // 初始化所有产品的爱心数量
     if (process.env.MONGODB_URI && dbConnection) {
-        const productIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]; // 根据实际产品ID调整
+        const productIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]; // 根据实际产品ID调整
         try {
             console.log('\n📊 初始化产品爱心数量...');
             await db.initHeartCounts(productIds);
