@@ -279,16 +279,13 @@ function getImageUrl(item) {
     const isSlow = isSlowNetwork();
     
     // 添加版本号查询参数，防止浏览器缓存
+    // 使用固定的版本号，避免刷新时URL不一致导致图片无法加载
     const addVersion = (url) => {
         if (!url) return url;
         const separator = url.includes('?') ? '&' : '?';
-        // 检查是否是刷新操作（移动端特别需要）
-        const isRefresh = window.performance && window.performance.navigation && 
-                         (window.performance.navigation.type === 1 || window.performance.navigation.type === 255);
-        // 如果是移动端刷新，添加刷新标记确保图片更新
-        const isMobile = isMobileDevice();
-        const version = (isMobile && isRefresh) ? `${IMAGE_VERSION}-${Date.now()}` : IMAGE_VERSION;
-        return `${url}${separator}v=${version}`;
+        // 使用固定版本号，确保URL一致性
+        // 如果需要强制刷新，应该更新 IMAGE_VERSION 常量，而不是使用时间戳
+        return `${url}${separator}v=${IMAGE_VERSION}`;
     };
     
     // 移动端或低速网络优先使用JPG（更快更稳定）
@@ -522,8 +519,26 @@ function createProductCard(item, index) {
                 clearTimeout(loadTimeout);
                 console.warn(`图片加载失败: ${imageUrl}`);
                 // 尝试使用fallback
-                if (fallbackUrl) {
+                if (fallbackUrl && img.src !== fallbackUrl) {
+                    console.log(`尝试使用fallback图片: ${fallbackUrl}`);
+                    const fallbackHandleLoad = function() {
+                        this.dataset.loaded = 'true';
+                        this.style.opacity = '1';
+                        if (loadingPlaceholder) {
+                            loadingPlaceholder.style.display = 'none';
+                        }
+                        this.removeEventListener('load', fallbackHandleLoad);
+                    };
+                    const fallbackHandleError = function() {
+                        console.error(`Fallback图片也加载失败: ${fallbackUrl}`);
+                        if (loadingPlaceholder) {
+                            loadingPlaceholder.style.display = 'none';
+                        }
+                        this.removeEventListener('error', fallbackHandleError);
+                    };
                     img.src = fallbackUrl;
+                    img.addEventListener('load', fallbackHandleLoad, { once: true });
+                    img.addEventListener('error', fallbackHandleError, { once: true });
                 } else {
                     if (loadingPlaceholder) {
                         loadingPlaceholder.style.display = 'none';
@@ -1314,38 +1329,23 @@ async function loadImage(index) {
     
     // 如果已经预加载，直接使用
     if (img.dataset.preloaded === 'true') {
-        img.src = img.dataset.preloadFallback || imageUrl;
-        img.dataset.loaded = 'true';
-        if (loadingPlaceholder) {
-            loadingPlaceholder.style.display = 'none';
-        }
-        // 确保图片使用绝对定位居中（使用!important确保优先级）
-        img.style.setProperty('position', 'absolute', 'important');
-        img.style.setProperty('top', '50%', 'important');
-        img.style.setProperty('left', '50%', 'important');
-        img.style.setProperty('transform', 'translate(-50%, -50%) translateZ(0)', 'important');
-        img.style.setProperty('-webkit-transform', 'translate(-50%, -50%) translateZ(0)', 'important');
-        img.style.setProperty('margin', '0', 'important');
-        
-        // 触发加载事件以确保图片显示
-        // 确保图片尺寸已确定，防止布局偏移
-        if (img.naturalWidth && img.naturalHeight) {
-            img.style.opacity = '0';
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    // 再次确保绝对定位居中（使用!important确保优先级）
-                    img.style.setProperty('position', 'absolute', 'important');
-                    img.style.setProperty('top', '50%', 'important');
-                    img.style.setProperty('left', '50%', 'important');
-                    img.style.setProperty('transform', 'translate(-50%, -50%) translateZ(0)', 'important');
-                    img.style.setProperty('-webkit-transform', 'translate(-50%, -50%) translateZ(0)', 'important');
-                    img.style.setProperty('margin', '0', 'important');
-                    img.style.transition = 'opacity 0.3s ease';
-                    img.style.opacity = '1';
-                });
-            });
+        const preloadUrl = img.dataset.preloadFallback || imageUrl;
+        // 检查预加载的图片是否已经加载完成
+        if (img.src === preloadUrl && img.complete && img.naturalWidth > 0) {
+            // 图片已经加载，直接显示
+            img.dataset.loaded = 'true';
+            img.style.opacity = '1';
+            if (loadingPlaceholder) {
+                loadingPlaceholder.style.display = 'none';
+            }
         } else {
-            // 确保图片使用绝对定位居中（使用!important确保优先级）
+            // 设置图片源
+            img.src = preloadUrl;
+            img.dataset.loaded = 'true';
+            if (loadingPlaceholder) {
+                loadingPlaceholder.style.display = 'none';
+            }
+            // 确保图片使用绝对定位居中
             img.style.setProperty('position', 'absolute', 'important');
             img.style.setProperty('top', '50%', 'important');
             img.style.setProperty('left', '50%', 'important');
