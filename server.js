@@ -83,7 +83,7 @@ app.use(express.static(__dirname, {
 
 // 确保 Picture 目录可访问，并设置图片缓存
 app.use('/Picture', express.static(path.join(__dirname, 'Picture'), {
-    maxAge: '1y', // 图片长期缓存
+    maxAge: 0, // 不缓存，确保图片更新及时
     etag: true,
     lastModified: true,
     setHeaders: (res, filePath) => {
@@ -95,8 +95,10 @@ app.use('/Picture', express.static(path.join(__dirname, 'Picture'), {
         } else if (filePath.endsWith('.png')) {
             res.setHeader('Content-Type', 'image/png');
         }
-        // 所有图片都使用长期缓存
-        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        // 图片使用 ETag 和 Last-Modified 验证，但允许重新验证，确保替换的图片能及时更新
+        res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
         // 添加 CORS 头，允许跨域访问（如果需要）
         res.setHeader('Access-Control-Allow-Origin', '*');
     }
@@ -162,6 +164,21 @@ app.get('/script.js', (req, res) => {
 app.get('/Picture/:filename', (req, res) => {
     const filename = req.params.filename;
     console.log('请求图片:', filename);
+    
+    // 强制不缓存图片，确保替换的图片能及时更新（特别是移动端）
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    
+    // 设置正确的 Content-Type
+    if (filename.endsWith('.jpg') || filename.endsWith('.jpeg')) {
+        res.setHeader('Content-Type', 'image/jpeg');
+    } else if (filename.endsWith('.webp')) {
+        res.setHeader('Content-Type', 'image/webp');
+    } else if (filename.endsWith('.png')) {
+        res.setHeader('Content-Type', 'image/png');
+    }
+    
     res.sendFile(filename, { root: path.join(__dirname, 'Picture') }, (err) => {
         if (err) {
             console.error('发送图片失败:', err);

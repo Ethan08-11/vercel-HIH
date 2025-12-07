@@ -270,7 +270,8 @@ function supportsWebP() {
 }
 
 // 图片版本号，用于强制刷新缓存（更新图片时修改此版本号）
-const IMAGE_VERSION = '20241205';
+// 使用时间戳确保每次部署后图片都能及时更新
+const IMAGE_VERSION = '202412071300';
 
 // 获取图片 URL（支持 WebP 回退，移动端优先使用JPG，添加版本号防止缓存）
 function getImageUrl(item) {
@@ -281,7 +282,13 @@ function getImageUrl(item) {
     const addVersion = (url) => {
         if (!url) return url;
         const separator = url.includes('?') ? '&' : '?';
-        return `${url}${separator}v=${IMAGE_VERSION}`;
+        // 检查是否是刷新操作（移动端特别需要）
+        const isRefresh = window.performance && window.performance.navigation && 
+                         (window.performance.navigation.type === 1 || window.performance.navigation.type === 255);
+        // 如果是移动端刷新，添加刷新标记确保图片更新
+        const isMobile = isMobileDevice();
+        const version = (isMobile && isRefresh) ? `${IMAGE_VERSION}-${Date.now()}` : IMAGE_VERSION;
+        return `${url}${separator}v=${version}`;
     };
     
     // 移动端或低速网络优先使用JPG（更快更稳定）
