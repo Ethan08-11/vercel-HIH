@@ -146,9 +146,9 @@ body {
     transform: translate(-50%, -50%) translateZ(0) !important;
     -webkit-transform: translate(-50%, -50%) translateZ(0) !important;
     
-    /* 图片尺寸限制 */
-    max-width: calc(100% - 20px) !important;
-    max-height: calc(75vh - 20px) !important;
+    /* 图片尺寸限制 - 尽可能大，保持比例 */
+    max-width: 100% !important;
+    max-height: 100% !important;
     width: auto;
     height: auto;
     
@@ -629,17 +629,17 @@ body {
         height: 75vh;
         min-height: 70vh;
         max-height: 85vh;
-        padding: 8px;
+        padding: 0;
         /* 确保平板端也完全居中 */
-        display: flex;
+        display: block;
         align-items: center;
         justify-content: center;
         text-align: center;
     }
 
     .product-image {
-        max-height: calc(75vh - 16px);
-        max-width: calc(100% - 16px);
+        max-height: 100% !important;
+        max-width: 100% !important;
         /* 确保图片在平板端也居中 */
         align-self: center;
         margin: 0 auto;
@@ -721,17 +721,17 @@ body {
         min-height: 75vh;
         max-height: 90vh;
         border-radius: 10px;
-        padding: 5px;
+        padding: 0;
         /* 确保移动端也完全居中 */
-        display: flex;
+        display: block;
         align-items: center;
         justify-content: center;
         text-align: center;
     }
 
     .product-image {
-        max-height: calc(75vh - 10px);
-        max-width: calc(100% - 10px);
+        max-height: 100% !important;
+        max-width: 100% !important;
         /* 确保图片在移动端也居中 */
         align-self: center;
         margin: 0 auto;
@@ -802,17 +802,17 @@ body {
     .product-image-container {
         min-height: 75vh;
         max-height: 88vh;
-        padding: 10px;
+        padding: 0;
         /* 确保笔记本端也完全居中 */
-        display: flex;
+        display: block;
         align-items: center;
         justify-content: center;
         text-align: center;
     }
 
     .product-image {
-        max-height: 83vh;
-        max-width: 100%;
+        max-height: 100% !important;
+        max-width: 100% !important;
         /* 确保图片在笔记本端也居中 */
         align-self: center;
         margin: 0 auto;
@@ -830,17 +830,17 @@ body {
         height: 80vh;
         min-height: 80vh;
         max-height: 90vh;
-        padding: 15px;
+        padding: 0;
         /* 确保大屏端也完全居中 */
-        display: flex;
+        display: block;
         align-items: center;
         justify-content: center;
         text-align: center;
     }
 
     .product-image {
-        max-height: calc(80vh - 30px);
-        max-width: calc(100% - 30px);
+        max-height: 100% !important;
+        max-width: 100% !important;
         /* 确保图片在大屏端也居中 */
         align-self: center;
         margin: 0 auto;
