@@ -475,13 +475,63 @@ function createProductCard(item, index) {
         if ('fetchPriority' in img) {
             img.fetchPriority = index === 0 ? 'high' : 'auto';
         }
-        img.src = imageUrl;
-        img.dataset.loaded = 'false';
         img.dataset.src = imageUrl;
         img.dataset.fallback = fallbackUrl;
+        img.dataset.loaded = 'false';
+        
         // 显示加载占位符
         if (loadingPlaceholder) {
             loadingPlaceholder.style.display = 'flex';
+        }
+        
+        // 设置超时，如果10秒后还没加载完成，隐藏占位符
+        const loadTimeout = setTimeout(() => {
+            if (img.dataset.loaded !== 'true') {
+                console.warn(`图片 ${index + 1} 加载超时: ${imageUrl}`);
+                if (loadingPlaceholder) {
+                    loadingPlaceholder.style.display = 'none';
+                }
+            }
+        }, 10000);
+        
+        // 检查图片是否已经加载完成（可能从缓存中）
+        if (img.complete && img.naturalWidth > 0) {
+            // 图片已经在缓存中，立即显示
+            clearTimeout(loadTimeout);
+            img.dataset.loaded = 'true';
+            img.style.opacity = '1';
+            if (loadingPlaceholder) {
+                loadingPlaceholder.style.display = 'none';
+            }
+        } else {
+            // 图片需要加载，设置src并监听load事件
+            img.src = imageUrl;
+            const handleLoad = function() {
+                clearTimeout(loadTimeout);
+                this.dataset.loaded = 'true';
+                if (loadingPlaceholder) {
+                    loadingPlaceholder.style.display = 'none';
+                }
+                this.style.opacity = '1';
+                this.removeEventListener('load', handleLoad);
+            };
+            img.addEventListener('load', handleLoad, { once: true });
+            
+            // 也监听error事件
+            const handleError = function() {
+                clearTimeout(loadTimeout);
+                console.warn(`图片加载失败: ${imageUrl}`);
+                // 尝试使用fallback
+                if (fallbackUrl) {
+                    img.src = fallbackUrl;
+                } else {
+                    if (loadingPlaceholder) {
+                        loadingPlaceholder.style.display = 'none';
+                    }
+                }
+                this.removeEventListener('error', handleError);
+            };
+            img.addEventListener('error', handleError, { once: true });
         }
     } else {
         // 懒加载的图片
@@ -509,7 +559,8 @@ function createProductCard(item, index) {
     }
     
     // 图片加载完成事件（统一处理所有图片）
-    img.addEventListener('load', function() {
+    // 使用命名函数以便可以移除监听器，避免重复绑定
+    const handleImageLoad = function() {
         this.dataset.loaded = 'true';
         const placeholder = this.parentElement.querySelector('.image-loading');
         if (placeholder) {
@@ -547,7 +598,19 @@ function createProductCard(item, index) {
             // 如果尺寸未确定，直接显示
             this.style.opacity = '1';
         }
-    }, { once: true });
+        
+        // 移除监听器，避免重复触发
+        this.removeEventListener('load', handleImageLoad);
+    };
+    
+    // 检查图片是否已经加载完成（可能从缓存中）
+    if (img.complete && img.naturalWidth > 0) {
+        // 图片已经加载完成，直接调用处理函数
+        handleImageLoad.call(img);
+    } else {
+        // 图片还未加载，添加监听器
+        img.addEventListener('load', handleImageLoad, { once: true });
+    }
     
     // 统一图片加载错误处理
     const itemName = item.name; // 保存到局部变量，确保在闭包中可访问
@@ -1081,10 +1144,21 @@ function loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries = 3, retryCou
         
         tempImg.onload = function() {
             clearTimeout(timeout);
-            img.src = imageUrl;
-            img.dataset.loaded = 'true';
-            console.log(`✅ 图片加载成功: ${imageUrl}`);
-            resolve();
+            // 确保图片元素存在且可见
+            if (img && img.parentElement) {
+                img.src = imageUrl;
+                img.dataset.loaded = 'true';
+                img.style.opacity = '1';
+                // 确保隐藏加载占位符
+                const placeholder = img.parentElement.querySelector('.image-loading');
+                if (placeholder) {
+                    placeholder.style.display = 'none';
+                }
+                console.log(`✅ 图片加载成功: ${imageUrl}`);
+                resolve();
+            } else {
+                reject(new Error('图片元素不存在'));
+            }
         };
         
         tempImg.onerror = function(error) {
@@ -1284,12 +1358,26 @@ async function loadImage(index) {
     }
     
     // 使用重试机制加载图片
+    // 设置超时，如果15秒后还没加载完成，隐藏占位符
+    const loadTimeout = setTimeout(() => {
+        if (img.dataset.loaded !== 'true' && loadingPlaceholder) {
+            console.warn(`图片 ${index + 1} 加载超时，隐藏占位符`);
+            loadingPlaceholder.style.display = 'none';
+        }
+    }, 15000);
+    
     try {
         await loadImageWithRetry(img, imageUrl, fallbackUrl);
+        clearTimeout(loadTimeout);
+        // 加载成功后，确保隐藏占位符
         if (loadingPlaceholder) {
             loadingPlaceholder.style.display = 'none';
         }
+        // 确保图片可见
+        img.style.opacity = '1';
+        img.dataset.loaded = 'true';
     } catch (error) {
+        clearTimeout(loadTimeout);
         console.error(`❌ 图片 ${index + 1} (${item.name}) 加载失败:`, error);
         console.error(`尝试的URL: ${imageUrl}, 回退URL: ${fallbackUrl}`);
         
