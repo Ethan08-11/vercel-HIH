@@ -273,11 +273,8 @@ function supportsWebP() {
 // 使用时间戳确保每次部署后图片都能及时更新
 const IMAGE_VERSION = '202412071300';
 
-// 获取图片 URL（支持 WebP 回退，移动端优先使用JPG，添加版本号防止缓存）
+// 获取图片 URL（优先使用 WebP，所有端都优先WebP，添加版本号防止缓存）
 function getImageUrl(item) {
-    const isMobile = isMobileDevice();
-    const isSlow = isSlowNetwork();
-    
     // 添加版本号查询参数，防止浏览器缓存
     // 使用固定的版本号，避免刷新时URL不一致导致图片无法加载
     const addVersion = (url) => {
@@ -288,17 +285,13 @@ function getImageUrl(item) {
         return `${url}${separator}v=${IMAGE_VERSION}`;
     };
     
-    // 移动端或低速网络优先使用JPG（更快更稳定）
-    if (isMobile || isSlow) {
-        console.log('移动端/低速网络：优先使用JPG格式');
-        const jpgUrl = item.fallback || item.image.replace('.webp', '.jpg');
-        return addVersion(jpgUrl);
-    }
-    
-    // 桌面端：如果浏览器支持 WebP，使用 WebP，否则使用 JPG
+    // 所有端都优先使用 WebP（体积更小，加载更快）
+    // 如果浏览器支持 WebP，使用 WebP，否则使用 JPG 作为回退
     if (supportsWebP() && item.image) {
         return addVersion(item.image);
     }
+    
+    // 浏览器不支持 WebP，使用 JPG 回退
     const jpgUrl = item.fallback || item.image.replace('.webp', '.jpg');
     return addVersion(jpgUrl);
 }
@@ -1202,12 +1195,13 @@ function isHardRefresh() {
 // 图片加载重试机制（优化版，更好的错误处理）
 function loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries = 2, retryCount = 0) {
     return new Promise((resolve, reject) => {
-        // 移动端使用更长的超时时间，因为网络可能较慢
+        // WebP格式文件更小，加载更快，可以适当缩短超时时间
         // 硬刷新时增加超时时间，因为所有资源都需要重新加载
         const isMobile = isMobileDevice();
         const hardRefresh = isHardRefresh();
+        // WebP通常比JPG小30-50%，加载更快，所以缩短基础超时时间
         // 硬刷新时增加50%的超时时间
-        const baseTimeout = isMobile ? 20000 : 18000;
+        const baseTimeout = isMobile ? 15000 : 12000; // WebP更快，缩短超时时间
         const timeoutDuration = hardRefresh ? Math.floor(baseTimeout * 1.5) : baseTimeout;
         const timeout = setTimeout(() => {
             clearTimeout(timeout);
@@ -1358,38 +1352,26 @@ function preloadImage(index) {
     activePreloads++;
     
     const item = productImages[index];
-    // 确保移动端优先使用JPG（与getImageUrl逻辑一致）
-    const isMobile = isMobileDevice();
-    const isSlow = isSlowNetwork();
-    
-    // 移动端或低速网络优先使用JPG
+    // 所有端都优先使用WebP（与getImageUrl逻辑一致）
     let imageUrl;
     let fallbackUrl;
     
-    if (isMobile || isSlow) {
-        // 移动端直接使用JPG
-    const baseFallback = item.fallback || item.image.replace('.webp', '.jpg');
-        imageUrl = baseFallback.includes('?') 
-        ? baseFallback 
-        : `${baseFallback}?v=${IMAGE_VERSION}`;
-        fallbackUrl = null; // JPG已经是回退格式，不需要再回退
+    // 优先使用WebP，所有端都使用WebP
+    if (supportsWebP() && item.image) {
+        imageUrl = item.image.includes('?') 
+            ? item.image 
+            : `${item.image}?v=${IMAGE_VERSION}`;
+        const baseFallback = item.fallback || item.image.replace('.webp', '.jpg');
+        fallbackUrl = baseFallback.includes('?') 
+            ? baseFallback 
+            : `${baseFallback}?v=${IMAGE_VERSION}`;
     } else {
-        // 桌面端：如果支持WebP使用WebP，否则使用JPG
-        if (supportsWebP() && item.image) {
-            imageUrl = item.image.includes('?') 
-                ? item.image 
-                : `${item.image}?v=${IMAGE_VERSION}`;
-            const baseFallback = item.fallback || item.image.replace('.webp', '.jpg');
-            fallbackUrl = baseFallback.includes('?') 
-                ? baseFallback 
-                : `${baseFallback}?v=${IMAGE_VERSION}`;
-        } else {
-            const baseFallback = item.fallback || item.image.replace('.webp', '.jpg');
-            imageUrl = baseFallback.includes('?') 
-                ? baseFallback 
-                : `${baseFallback}?v=${IMAGE_VERSION}`;
-            fallbackUrl = null;
-        }
+        // 浏览器不支持WebP，直接使用JPG
+        const baseFallback = item.fallback || item.image.replace('.webp', '.jpg');
+        imageUrl = baseFallback.includes('?') 
+            ? baseFallback 
+            : `${baseFallback}?v=${IMAGE_VERSION}`;
+        fallbackUrl = null;
     }
     
     // 在data属性中保存URL，供后续加载使用
@@ -1556,21 +1538,17 @@ async function loadImage(index) {
     const imageUrl = getImageUrl(item);
     
     // 生成fallback URL，确保格式正确
-    // 注意：移动端getImageUrl已经返回JPG，所以fallback应该也是JPG
-    const isMobile = isMobileDevice();
-    const isSlow = isSlowNetwork();
+    // 如果当前是WebP，fallback是JPG；如果已经是JPG，则不需要fallback
     let fallbackUrl = null;
     
-    if (!isMobile && !isSlow) {
-        // 桌面端：如果当前是WebP，fallback是JPG
-        if (imageUrl.includes('.webp')) {
-            const baseFallback = item.fallback || item.image.replace('.webp', '.jpg');
-            fallbackUrl = baseFallback.includes('?') 
-                ? baseFallback 
-                : `${baseFallback}?v=${IMAGE_VERSION}`;
-        }
+    if (imageUrl.includes('.webp')) {
+        // 当前是WebP，设置JPG作为fallback
+        const baseFallback = item.fallback || item.image.replace('.webp', '.jpg');
+        fallbackUrl = baseFallback.includes('?') 
+            ? baseFallback 
+            : `${baseFallback}?v=${IMAGE_VERSION}`;
     }
-    // 移动端/低速网络：已经是JPG了，不需要fallback
+    // 如果已经是JPG，则不需要fallback
     
     console.log(`开始加载图片 ${index + 1} (${item.name}): ${imageUrl}`);
     
@@ -1600,9 +1578,9 @@ async function loadImage(index) {
     }
     
     // 使用重试机制加载图片
-    // 设置超时，如果25秒后还没加载完成，隐藏占位符（给重试足够时间）
+    // WebP格式加载更快，缩短超时时间
     // 注意：isMobile 已经在上面声明过了，直接使用
-    const loadTimeoutDuration = isMobile ? 25000 : 22000;
+    const loadTimeoutDuration = isMobile ? 20000 : 18000; // WebP更快，缩短超时时间
     const loadTimeout = setTimeout(() => {
         if (img.dataset.loaded !== 'true' && loadingPlaceholder) {
             console.warn(`图片 ${index + 1} 加载超时，隐藏占位符`);
