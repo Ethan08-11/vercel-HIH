@@ -1182,12 +1182,33 @@ function selectProduct(productIndex) {
     updateNavButtons();
 }
 
+// 检测是否为硬刷新
+function isHardRefresh() {
+    // 检测页面刷新类型
+    const navigation = window.performance && window.performance.navigation;
+    const navigationType = window.performance && window.performance.getEntriesByType && 
+                          window.performance.getEntriesByType('navigation')[0];
+    
+    // 如果是刷新操作（type 1 = reload）
+    const isReload = (navigation && navigation.type === 1) || 
+                     (navigationType && navigationType.type === 'reload');
+    
+    // 或者从缓存中检测（硬刷新会清空缓存）
+    const cacheCleared = !sessionStorage.getItem('soft_refresh');
+    
+    return isReload || cacheCleared;
+}
+
 // 图片加载重试机制（优化版，更好的错误处理）
 function loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries = 2, retryCount = 0) {
     return new Promise((resolve, reject) => {
         // 移动端使用更长的超时时间，因为网络可能较慢
+        // 硬刷新时增加超时时间，因为所有资源都需要重新加载
         const isMobile = isMobileDevice();
-        const timeoutDuration = isMobile ? 20000 : 18000; // 移动端20秒，桌面端18秒
+        const hardRefresh = isHardRefresh();
+        // 硬刷新时增加50%的超时时间
+        const baseTimeout = isMobile ? 20000 : 18000;
+        const timeoutDuration = hardRefresh ? Math.floor(baseTimeout * 1.5) : baseTimeout;
         const timeout = setTimeout(() => {
             clearTimeout(timeout);
             if (retryCount < maxRetries) {
@@ -1249,7 +1270,7 @@ function loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries = 2, retryCou
             clearTimeout(timeout);
             console.warn(`⚠️ 图片加载错误 (尝试 ${retryCount + 1}/${maxRetries + 1}): ${imageUrl}`);
             
-            // 如果是 WebP 且还有回退图片，尝试回退
+            // 如果是 WebP 且还有回退图片，尝试回退到JPG
             if (imageUrl.includes('.webp') && fallbackUrl && retryCount === 0) {
                 console.log('WebP 加载失败，尝试回退到 JPG: ' + fallbackUrl);
                 loadImageWithRetry(img, fallbackUrl, null, maxRetries, retryCount + 1)
@@ -1257,7 +1278,10 @@ function loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries = 2, retryCou
                     .catch(reject);
             } else if (retryCount < maxRetries) {
                 // 重试，使用指数退避，但最大不超过3秒
-                const delay = Math.min(1000 * (retryCount + 1), 3000);
+                // 硬刷新时稍微延长延迟
+                const hardRefresh = isHardRefresh();
+                const baseDelay = Math.min(1000 * (retryCount + 1), 3000);
+                const delay = hardRefresh ? Math.floor(baseDelay * 1.2) : baseDelay;
                 console.log(`等待 ${delay}ms 后重试...`);
                 setTimeout(() => {
                     loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries, retryCount + 1)
@@ -1265,12 +1289,34 @@ function loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries = 2, retryCou
                         .catch(reject);
                 }, delay);
             } else {
-                // 如果还有fallback URL，尝试使用
-                if (imageUrl.includes('.webp') && fallbackUrl && retryCount === maxRetries) {
-                    console.log('所有重试失败，最后尝试JPG回退');
-                    loadImageWithRetry(img, fallbackUrl, null, 0, 0) // 不重试，直接尝试
-                        .then(resolve)
-                        .catch(() => reject(new Error(`图片加载失败: ${imageUrl}`)));
+                // 所有重试都失败了
+                // 如果当前URL是WebP且有fallback，最后尝试一次JPG
+                if (imageUrl.includes('.webp') && fallbackUrl) {
+                    console.log('所有重试失败，最后尝试JPG回退: ' + fallbackUrl);
+                    // 直接尝试加载fallback，不经过重试逻辑
+                    const finalImg = new Image();
+                    const finalTimeout = setTimeout(() => {
+                        finalImg.onload = null;
+                        finalImg.onerror = null;
+                        reject(new Error(`图片加载失败: ${imageUrl}`));
+                    }, 15000);
+                    
+                    finalImg.onload = function() {
+                        clearTimeout(finalTimeout);
+                        img.src = fallbackUrl;
+                        img.dataset.loaded = 'true';
+                        const placeholder = img.parentElement?.querySelector('.image-loading');
+                        if (placeholder) placeholder.style.display = 'none';
+                        img.style.opacity = '1';
+                        resolve();
+                    };
+                    
+                    finalImg.onerror = function() {
+                        clearTimeout(finalTimeout);
+                        reject(new Error(`图片加载失败: ${imageUrl} (JPG回退也失败)`));
+                    };
+                    
+                    finalImg.src = fallbackUrl;
                 } else {
                     reject(new Error(`图片加载失败: ${imageUrl}`));
                 }
@@ -1322,10 +1368,10 @@ function preloadImage(index) {
     
     if (isMobile || isSlow) {
         // 移动端直接使用JPG
-        const baseFallback = item.fallback || item.image.replace('.webp', '.jpg');
+    const baseFallback = item.fallback || item.image.replace('.webp', '.jpg');
         imageUrl = baseFallback.includes('?') 
-            ? baseFallback 
-            : `${baseFallback}?v=${IMAGE_VERSION}`;
+        ? baseFallback 
+        : `${baseFallback}?v=${IMAGE_VERSION}`;
         fallbackUrl = null; // JPG已经是回退格式，不需要再回退
     } else {
         // 桌面端：如果支持WebP使用WebP，否则使用JPG
@@ -1347,7 +1393,7 @@ function preloadImage(index) {
     }
     
     // 在data属性中保存URL，供后续加载使用
-    img.dataset.src = imageUrl;
+        img.dataset.src = imageUrl;
     if (fallbackUrl) {
         img.dataset.fallback = fallbackUrl;
     }
@@ -1508,10 +1554,23 @@ async function loadImage(index) {
     
     // 获取图片URL（每次都重新获取，确保URL正确）
     const imageUrl = getImageUrl(item);
-    const baseFallback = item.fallback || item.image.replace('.webp', '.jpg');
-    const fallbackUrl = baseFallback.includes('?') 
-        ? baseFallback 
-        : `${baseFallback}?v=${IMAGE_VERSION}`;
+    
+    // 生成fallback URL，确保格式正确
+    // 注意：移动端getImageUrl已经返回JPG，所以fallback应该也是JPG
+    const isMobile = isMobileDevice();
+    const isSlow = isSlowNetwork();
+    let fallbackUrl = null;
+    
+    if (!isMobile && !isSlow) {
+        // 桌面端：如果当前是WebP，fallback是JPG
+        if (imageUrl.includes('.webp')) {
+            const baseFallback = item.fallback || item.image.replace('.webp', '.jpg');
+            fallbackUrl = baseFallback.includes('?') 
+                ? baseFallback 
+                : `${baseFallback}?v=${IMAGE_VERSION}`;
+        }
+    }
+    // 移动端/低速网络：已经是JPG了，不需要fallback
     
     console.log(`开始加载图片 ${index + 1} (${item.name}): ${imageUrl}`);
     
@@ -1542,7 +1601,7 @@ async function loadImage(index) {
     
     // 使用重试机制加载图片
     // 设置超时，如果25秒后还没加载完成，隐藏占位符（给重试足够时间）
-    const isMobile = isMobileDevice();
+    // 注意：isMobile 已经在上面声明过了，直接使用
     const loadTimeoutDuration = isMobile ? 25000 : 22000;
     const loadTimeout = setTimeout(() => {
         if (img.dataset.loaded !== 'true' && loadingPlaceholder) {
@@ -1891,6 +1950,8 @@ function initializeApp() {
 // 检测刷新操作并设置标记（在页面加载时立即执行）
 (function() {
     const refreshKey = 'page_refreshed';
+    const softRefreshKey = 'soft_refresh';
+    
     // 检查是否是刷新
     const isRefresh = (window.performance && window.performance.navigation && 
                       (window.performance.navigation.type === 1 || window.performance.navigation.type === 255)) ||
@@ -1901,6 +1962,13 @@ function initializeApp() {
     if (isRefresh) {
         console.log('检测到页面刷新，设置刷新标记');
         sessionStorage.setItem(refreshKey, 'true');
+        // 标记为软刷新（不是硬刷新）
+        sessionStorage.setItem(softRefreshKey, 'true');
+    } else {
+        // 首次加载或硬刷新（没有刷新标记）
+        console.log('首次加载或硬刷新');
+        // 清除软刷新标记，这样isHardRefresh()会返回true
+        sessionStorage.removeItem(softRefreshKey);
     }
 })();
 

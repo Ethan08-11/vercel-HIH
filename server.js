@@ -160,6 +160,11 @@ app.get('/script.js', (req, res) => {
     });
 });
 
+// 处理favicon请求 - 避免404错误
+app.get('/favicon.ico', (req, res) => {
+    res.status(204).end(); // 返回204 No Content
+});
+
 // 处理图片请求
 app.get('/Picture/:filename', (req, res) => {
     const filename = req.params.filename;
@@ -752,24 +757,68 @@ process.on('unhandledRejection', (reason, promise) => {
     });
 });
 
+// 检测是否为Zeabur环境
+function isZeaburEnvironment() {
+    // 优先检查ZEABUR环境变量（如果在Zeabur部署，建议设置此变量）
+    // 如果没有设置，通过检查是否有PORT环境变量且不在本地常用端口判断
+    return !!process.env.ZEABUR || 
+           (!!process.env.PORT && process.env.PORT !== '3000' && process.env.NODE_ENV === 'production') ||
+           (process.env.NODE_ENV === 'production' && !process.env.USER && !process.env.HOME);
+}
+
 // 初始化数据库连接（在服务器启动时）
 async function initServer() {
+    const isZeabur = isZeaburEnvironment();
+    
     console.log('\n🚀 开始初始化服务器...');
     console.log('📋 环境检查:');
+    console.log('   环境:', isZeabur ? 'Zeabur (生产)' : '本地开发');
     console.log('   NODE_ENV:', process.env.NODE_ENV || 'development');
     console.log('   PORT:', process.env.PORT || 3000);
     console.log('   MONGODB_URI:', process.env.MONGODB_URI ? `已配置 (长度: ${process.env.MONGODB_URI.length})` : '未配置');
     
-    // 尝试连接数据库（不阻塞服务器启动）
-    console.log('\n📡 尝试连接数据库...');
+    // 在Zeabur上，先快速启动服务器，然后异步连接数据库
+    // 这样可以确保应用快速上线，即使数据库连接失败也不影响HTTP服务
     let dbConnection = null;
     
-    // 使用 Promise.race 设置超时，避免长时间等待
-    // 在 Zeabur 上，缩短超时时间，避免启动时间过长
+    if (isZeabur) {
+        // Zeabur环境：快速启动服务器，数据库连接异步进行
+        console.log('\n⚡ Zeabur环境：快速启动模式');
+        
+        // 立即启动服务器（不等待数据库）
+        startServerFast();
+        
+        // 异步尝试连接数据库（不阻塞启动）
+        (async () => {
+            console.log('\n📡 后台尝试连接数据库...');
     try {
         const connectPromise = db.connectDB();
         const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('连接超时')), 15000) // 缩短到15秒
+                    setTimeout(() => reject(new Error('连接超时')), 5000) // Zeabur上只用5秒超时
+                );
+                
+                dbConnection = await Promise.race([connectPromise, timeoutPromise]);
+                
+                if (dbConnection) {
+                    console.log('✅ 数据库连接成功（后台连接）');
+                    // 初始化爱心数量（后台异步执行）
+                    initializeHeartCountsAsync();
+                } else {
+                    console.warn('⚠️  数据库连接失败，使用文件系统存储');
+                }
+            } catch (error) {
+                console.warn('⚠️  数据库连接超时或失败，使用文件系统存储');
+                console.warn('   错误:', error.message);
+                dbConnection = null;
+            }
+        })();
+    } else {
+        // 本地开发环境：等待数据库连接
+        console.log('\n📡 尝试连接数据库...');
+        try {
+            const connectPromise = db.connectDB();
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('连接超时')), 10000) // 本地开发用10秒
         );
         
         dbConnection = await Promise.race([connectPromise, timeoutPromise]);
@@ -780,68 +829,69 @@ async function initServer() {
             console.warn('⚠️  数据库连接失败，服务器将继续运行（使用文件系统存储）');
             if (!process.env.MONGODB_URI) {
                 console.warn('   原因: MONGODB_URI 环境变量未设置');
-                console.warn('   解决方案: 在Zeabur环境变量中配置MONGODB_URI');
             } else {
                 console.warn('   原因: 可能是连接字符串错误或网络问题');
-                console.warn('   建议: 检查MONGODB_URI格式和网络连接');
-                console.warn('   注意: 服务器将继续运行，数据将保存到本地文件系统');
             }
         }
     } catch (error) {
         console.warn('⚠️  数据库连接超时或失败，服务器将继续运行（使用文件系统存储）');
         console.warn('   错误:', error.message);
         dbConnection = null;
-        // 确保即使数据库连接失败，也不阻止服务器启动
+        }
+        
+        // 本地环境：同步启动服务器
+        startServerFast();
     }
     
-    // 初始化所有产品的爱心数量（异步执行，不阻塞服务器启动）
-    if (process.env.MONGODB_URI && dbConnection) {
-        const productIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]; // 根据实际产品ID调整
+    // 保存数据库连接状态供后续使用
+    return dbConnection;
+    }
+    
+// 异步初始化爱心数量（不阻塞服务器启动）
+function initializeHeartCountsAsync() {
+    if (!process.env.MONGODB_URI) {
+        console.warn('⚠️  MONGODB_URI未配置，无法初始化爱心数量');
+        return;
+    }
+    
+    const productIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38];
+    
         // 使用异步执行，不阻塞服务器启动
         (async () => {
             try {
-                console.log('\n📊 初始化产品爱心数量...');
+            // 等待一下确保数据库连接完成
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            console.log('📊 后台初始化产品爱心数量...');
                 await db.initHeartCounts(productIds);
                 console.log('✅ 爱心数量已初始化');
                 
-                // 验证初始化结果
+            // 验证初始化结果（简化日志，避免过多输出）
                 const counts = await db.getHeartCounts();
                 const countKeys = Object.keys(counts || {});
                 console.log(`📊 初始化后的爱心数量: 共 ${countKeys.length} 个产品`);
-                if (countKeys.length > 0 && countKeys.length <= 10) {
-                    console.log('   详情:', counts);
-                } else if (countKeys.length > 10) {
-                    console.log('   前10个产品:', Object.fromEntries(Object.entries(counts).slice(0, 10)));
-                }
             } catch (error) {
-                console.error('❌ 初始化爱心数量失败:', error);
-                console.error('错误详情:', error.message);
-                if (error.stack) {
-                    console.error('错误堆栈:', error.stack);
-                }
-                // 不阻止服务器启动，继续运行
-                console.warn('⚠️  服务器将继续运行，但爱心数量可能未正确初始化');
+            console.error('❌ 初始化爱心数量失败:', error.message);
+            // 不阻止服务器运行
             }
         })();
-    } else {
-        if (!process.env.MONGODB_URI) {
-            console.warn('⚠️  MONGODB_URI未配置，无法初始化爱心数量');
-            console.warn('   在Zeabur部署时，请在环境变量中配置MONGODB_URI');
-        } else {
-            console.warn('⚠️  数据库连接失败，无法初始化爱心数量');
-        }
-    }
-    
-    // 启动服务器（带端口占用检测和自动重试）
-    // 在 Zeabur 上，只使用指定的 PORT，不自动切换端口
-    const startServer = (port, retryCount = 0) => {
-        const maxRetries = process.env.ZEABUR ? 0 : 5; // Zeabur 上不重试，本地开发最多5次
+}
+
+// 快速启动服务器（优化后的启动函数）
+function startServerFast() {
+    const isZeabur = isZeaburEnvironment();
+    const port = parseInt(process.env.PORT || '3000', 10);
         
         serverInstance = app.listen(port, '0.0.0.0', () => {
+        console.log(`\n✅ 服务器运行成功！`);
+        console.log(`   端口: ${port}`);
+        console.log(`   环境: ${isZeabur ? 'Zeabur (生产)' : '本地开发'}`);
+        
+        if (!isZeabur) {
+            // 只在本地开发环境显示详细网络信息
             const networkInterfaces = os.networkInterfaces();
             let localIP = 'localhost';
             
-            // 获取局域网IP地址
             for (const interfaceName in networkInterfaces) {
                 const interfaces = networkInterfaces[interfaceName];
                 for (const iface of interfaces) {
@@ -853,22 +903,11 @@ async function initServer() {
                 if (localIP !== 'localhost') break;
             }
             
-            console.log(`\n✅ 服务器运行成功！`);
-            if (port !== PORT) {
-                console.log(`⚠️  注意: 端口 ${PORT} 被占用，已自动切换到端口 ${port}`);
-            }
-            console.log(`本地访问: http://localhost:${port}`);
-            console.log(`局域网访问: http://${localIP}:${port}`);
-            console.log(`\n在手机/平板上访问: http://${localIP}:${port}`);
-            
-            if (process.env.MONGODB_URI && dbConnection) {
-                console.log(`\n✅ 数据库: MongoDB (已连接)`);
-            } else if (process.env.MONGODB_URI) {
-                console.log(`\n⚠️  数据库: MongoDB (连接失败，使用文件系统)`);
+            console.log(`   本地访问: http://localhost:${port}`);
+            console.log(`   局域网访问: http://${localIP}:${port}`);
             } else {
-                console.log(`\n⚠️  数据库: 未配置 (使用文件系统，仅本地开发)`);
-                console.log(`   数据保存目录: ${dataDir}`);
-                console.log(`   产品分类目录: ${productsDir}`);
+            // Zeabur环境：显示简洁信息
+            console.log(`   HTTP服务已就绪，等待请求...`);
             }
             
             console.log('\n可用API:');
@@ -877,45 +916,19 @@ async function initServer() {
             console.log('  GET  /api/products/:productId - 获取指定产品的提交记录');
             console.log('  GET  /api/export - 导出所有数据为JSON文件');
             console.log('  GET  /api/heart-counts - 获取所有产品的爱心数量');
-            console.log('  POST /api/heart-count - 更新产品的爱心数量（同时记录点击历史）');
+        console.log('  POST /api/heart-count - 更新产品的爱心数量');
+        console.log('\n服务器已就绪，可以接受请求！\n');
         }).on('error', (err) => {
+        console.error('❌ 服务器启动失败:', err.message);
             if (err.code === 'EADDRINUSE') {
-                if (retryCount < maxRetries) {
-                    const nextPort = port + 1;
-                    console.warn(`\n⚠️  端口 ${port} 已被占用，尝试端口 ${nextPort}...`);
-                    // 递归尝试下一个端口
-                    setTimeout(() => startServer(nextPort, retryCount + 1), 500);
-                } else {
-                    console.error(`\n❌ 错误: 已尝试 ${maxRetries + 1} 个端口，全部被占用`);
-                    console.error(`\n解决方案:`);
-                    console.error(`1. 关闭占用端口的进程:`);
-                    if (process.platform === 'win32') {
-                        console.error(`   Windows: netstat -ano | findstr :${PORT}`);
-                        console.error(`   然后: taskkill /F /PID <PID>`);
-                    } else {
-                        console.error(`   Linux/Mac: lsof -i :${PORT}`);
-                        console.error(`   然后: kill -9 <PID>`);
-                    }
-                    console.error(`\n2. 或手动指定其他端口:`);
-                    console.error(`   Windows: set PORT=3001 && npm start`);
-                    console.error(`   Linux/Mac: PORT=3001 npm start`);
-                    process.exit(1);
+            console.error(`   端口 ${port} 已被占用`);
+            if (!isZeabur) {
+                console.error('   解决方案: 关闭占用端口的进程或使用其他端口');
                 }
-            } else {
-                console.error('❌ 服务器启动失败:', err);
-                console.error('错误详情:', err.message);
-                if (err.stack) {
-                    console.error('错误堆栈:', err.stack);
                 }
                 process.exit(1);
-            }
         });
-    };
     
-    // 开始启动服务器
-    startServer(PORT);
-    
-    // 保存服务器实例到全局变量
     return serverInstance;
 }
 
