@@ -1579,7 +1579,7 @@ async function loadImage(index) {
     
     // 使用重试机制加载图片
     // WebP格式加载更快，缩短超时时间
-    // 注意：isMobile 已经在上面声明过了，直接使用
+    const isMobile = isMobileDevice();
     const loadTimeoutDuration = isMobile ? 20000 : 18000; // WebP更快，缩短超时时间
     const loadTimeout = setTimeout(() => {
         if (img.dataset.loaded !== 'true' && loadingPlaceholder) {
