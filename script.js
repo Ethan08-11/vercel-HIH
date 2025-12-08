@@ -602,15 +602,14 @@ function createProductCard(item, index) {
         }
     }
     
-    // 预加载策略优化：移动端预加载前3张，桌面端预加载前2张
+    // 预加载策略优化：移动端预加载下一张，桌面端预加载下一张
     if (index === 0) {
-        // 第一张加载后，立即预加载后续图片
+        // 第一张加载后，延迟预加载下一张，避免阻塞当前加载
         setTimeout(() => {
-            const preloadCount = isMobile ? 2 : 1; // 移动端预加载2张，桌面端1张
-            for (let i = 1; i <= preloadCount && i < productImages.length; i++) {
-                preloadImage(i);
+            if (1 < productImages.length) {
+                preloadImage(1);
             }
-        }, isMobile ? 200 : 500); // 移动端更快开始预加载
+        }, isMobile ? 1000 : 800); // 延迟预加载，确保当前图片优先加载
     }
     
     // 图片加载完成事件（统一处理所有图片）
@@ -1184,11 +1183,11 @@ function selectProduct(productIndex) {
 }
 
 // 图片加载重试机制（优化版，更好的错误处理）
-function loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries = 3, retryCount = 0) {
+function loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries = 2, retryCount = 0) {
     return new Promise((resolve, reject) => {
-        // 移动端使用更短的超时时间，快速失败并回退到JPG
+        // 移动端使用更长的超时时间，因为网络可能较慢
         const isMobile = isMobileDevice();
-        const timeoutDuration = isMobile ? 8000 : 15000;
+        const timeoutDuration = isMobile ? 20000 : 18000; // 移动端20秒，桌面端18秒
         const timeout = setTimeout(() => {
             clearTimeout(timeout);
             if (retryCount < maxRetries) {
@@ -1257,8 +1256,8 @@ function loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries = 3, retryCou
                     .then(resolve)
                     .catch(reject);
             } else if (retryCount < maxRetries) {
-                // 重试，使用指数退避
-                const delay = 1000 * (retryCount + 1);
+                // 重试，使用指数退避，但最大不超过3秒
+                const delay = Math.min(1000 * (retryCount + 1), 3000);
                 console.log(`等待 ${delay}ms 后重试...`);
                 setTimeout(() => {
                     loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries, retryCount + 1)
@@ -1266,7 +1265,15 @@ function loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries = 3, retryCou
                         .catch(reject);
                 }, delay);
             } else {
-                reject(new Error(`图片加载失败: ${imageUrl}`));
+                // 如果还有fallback URL，尝试使用
+                if (imageUrl.includes('.webp') && fallbackUrl && retryCount === maxRetries) {
+                    console.log('所有重试失败，最后尝试JPG回退');
+                    loadImageWithRetry(img, fallbackUrl, null, 0, 0) // 不重试，直接尝试
+                        .then(resolve)
+                        .catch(() => reject(new Error(`图片加载失败: ${imageUrl}`)));
+                } else {
+                    reject(new Error(`图片加载失败: ${imageUrl}`));
+                }
             }
         };
         
@@ -1274,6 +1281,11 @@ function loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries = 3, retryCou
         tempImg.src = imageUrl;
     });
 }
+
+// 预加载队列，控制并发数量
+let preloadQueue = [];
+let activePreloads = 0;
+const MAX_PRELOAD_CONCURRENT = 2; // 最多同时预加载2张图片
 
 // 预加载图片（静默加载，不显示占位符，增强错误处理）
 function preloadImage(index) {
@@ -1283,43 +1295,90 @@ function preloadImage(index) {
     if (!card) return;
     
     const img = card.querySelector('.product-image');
-    if (!img || img.dataset.loaded === 'true' || img.dataset.preloading === 'true') return;
+    if (!img || img.dataset.loaded === 'true' || img.dataset.preloading === 'true' || img.dataset.preloaded === 'true') {
+        return;
+    }
     
+    // 如果队列已满或正在加载太多，加入队列等待
+    if (activePreloads >= MAX_PRELOAD_CONCURRENT) {
+        if (!preloadQueue.includes(index)) {
+            preloadQueue.push(index);
+        }
+        return;
+    }
+    
+    // 开始预加载
     img.dataset.preloading = 'true';
-    const item = productImages[index];
-    const imageUrl = getImageUrl(item);
-    // 生成fallback URL，确保也包含版本号
-    const baseFallback = item.fallback || item.image.replace('.webp', '.jpg');
-    const fallbackUrl = baseFallback.includes('?') 
-        ? baseFallback 
-        : `${baseFallback}?v=${IMAGE_VERSION}`;
+    activePreloads++;
     
-    // 先在data属性中保存URL，供后续加载使用
-    if (img.dataset.src) {
-        img.dataset.src = imageUrl;
+    const item = productImages[index];
+    // 确保移动端优先使用JPG（与getImageUrl逻辑一致）
+    const isMobile = isMobileDevice();
+    const isSlow = isSlowNetwork();
+    
+    // 移动端或低速网络优先使用JPG
+    let imageUrl;
+    let fallbackUrl;
+    
+    if (isMobile || isSlow) {
+        // 移动端直接使用JPG
+        const baseFallback = item.fallback || item.image.replace('.webp', '.jpg');
+        imageUrl = baseFallback.includes('?') 
+            ? baseFallback 
+            : `${baseFallback}?v=${IMAGE_VERSION}`;
+        fallbackUrl = null; // JPG已经是回退格式，不需要再回退
+    } else {
+        // 桌面端：如果支持WebP使用WebP，否则使用JPG
+        if (supportsWebP() && item.image) {
+            imageUrl = item.image.includes('?') 
+                ? item.image 
+                : `${item.image}?v=${IMAGE_VERSION}`;
+            const baseFallback = item.fallback || item.image.replace('.webp', '.jpg');
+            fallbackUrl = baseFallback.includes('?') 
+                ? baseFallback 
+                : `${baseFallback}?v=${IMAGE_VERSION}`;
+        } else {
+            const baseFallback = item.fallback || item.image.replace('.webp', '.jpg');
+            imageUrl = baseFallback.includes('?') 
+                ? baseFallback 
+                : `${baseFallback}?v=${IMAGE_VERSION}`;
+            fallbackUrl = null;
+        }
+    }
+    
+    // 在data属性中保存URL，供后续加载使用
+    img.dataset.src = imageUrl;
+    if (fallbackUrl) {
         img.dataset.fallback = fallbackUrl;
     }
     
     const preloadImg = new Image();
     
-    // 设置超时，移动端使用更短超时，但不要太短避免误判
-    const isMobile = isMobileDevice();
-    const timeoutDuration = isMobile ? 8000 : 10000; // 移动端8秒，桌面端10秒
+    // 设置超时，移动端使用更长超时，因为网络可能较慢
+    const timeoutDuration = isMobile ? 15000 : 12000; // 移动端15秒，桌面端12秒
     const timeout = setTimeout(() => {
         preloadImg.onload = null;
         preloadImg.onerror = null;
         img.dataset.preloading = 'false';
-        console.warn(`⚠️ 图片 ${index + 1} (${item.name}) 预加载超时`);
+        activePreloads--;
+        processPreloadQueue(); // 处理队列中的下一个
         
-        // 如果WebP超时，尝试JPG
+        // 如果WebP超时，尝试JPG（只在桌面端且使用WebP时）
         if (imageUrl.includes('.webp') && fallbackUrl) {
             const fallbackImg = new Image();
+            const fallbackTimeout = setTimeout(() => {
+                fallbackImg.onload = null;
+                fallbackImg.onerror = null;
+            }, 10000);
+            
             fallbackImg.onload = function() {
+                clearTimeout(fallbackTimeout);
                 img.dataset.preloaded = 'true';
                 img.dataset.preloadFallback = fallbackUrl;
                 console.log(`✅ 图片 ${index + 1} (${item.name}) 预加载完成（使用JPG回退）`);
             };
             fallbackImg.onerror = function() {
+                clearTimeout(fallbackTimeout);
                 console.warn(`⚠️ 图片 ${index + 1} (${item.name}) 回退格式也加载失败`);
             };
             fallbackImg.src = fallbackUrl;
@@ -1330,33 +1389,61 @@ function preloadImage(index) {
         clearTimeout(timeout);
         img.dataset.preloaded = 'true';
         img.dataset.preloading = 'false';
+        activePreloads--;
+        processPreloadQueue(); // 处理队列中的下一个
         console.log(`✅ 图片 ${index + 1} (${item.name}) 预加载完成`);
     };
     
     preloadImg.onerror = function() {
         clearTimeout(timeout);
-        // 如果 WebP 失败，尝试 JPG
+        // 如果 WebP 失败，尝试 JPG（只在桌面端且使用WebP时）
         if (imageUrl.includes('.webp') && fallbackUrl) {
             console.log(`图片 ${index + 1} (${item.name}) WebP加载失败，尝试JPG回退`);
             const fallbackImg = new Image();
+            const fallbackTimeout = setTimeout(() => {
+                fallbackImg.onload = null;
+                fallbackImg.onerror = null;
+                img.dataset.preloading = 'false';
+                activePreloads--;
+                processPreloadQueue();
+            }, 10000);
+            
             fallbackImg.onload = function() {
+                clearTimeout(fallbackTimeout);
                 img.dataset.preloaded = 'true';
                 img.dataset.preloadFallback = fallbackUrl;
                 img.dataset.preloading = 'false';
+                activePreloads--;
+                processPreloadQueue();
                 console.log(`✅ 图片 ${index + 1} (${item.name}) 预加载完成（使用JPG回退）`);
             };
             fallbackImg.onerror = function() {
+                clearTimeout(fallbackTimeout);
                 img.dataset.preloading = 'false';
+                activePreloads--;
+                processPreloadQueue();
                 console.warn(`⚠️ 图片 ${index + 1} (${item.name}) 预加载失败（WebP和JPG都失败）`);
             };
             fallbackImg.src = fallbackUrl;
         } else {
             img.dataset.preloading = 'false';
+            activePreloads--;
+            processPreloadQueue();
             console.warn(`⚠️ 图片 ${index + 1} (${item.name}) 预加载失败`);
         }
     };
     
     preloadImg.src = imageUrl;
+}
+
+// 处理预加载队列
+function processPreloadQueue() {
+    if (activePreloads >= MAX_PRELOAD_CONCURRENT || preloadQueue.length === 0) {
+        return;
+    }
+    
+    const nextIndex = preloadQueue.shift();
+    preloadImage(nextIndex);
 }
 
 // 加载图片（懒加载，带重试机制）
@@ -1454,13 +1541,15 @@ async function loadImage(index) {
     }
     
     // 使用重试机制加载图片
-    // 设置超时，如果15秒后还没加载完成，隐藏占位符
+    // 设置超时，如果25秒后还没加载完成，隐藏占位符（给重试足够时间）
+    const isMobile = isMobileDevice();
+    const loadTimeoutDuration = isMobile ? 25000 : 22000;
     const loadTimeout = setTimeout(() => {
         if (img.dataset.loaded !== 'true' && loadingPlaceholder) {
             console.warn(`图片 ${index + 1} 加载超时，隐藏占位符`);
             loadingPlaceholder.style.display = 'none';
         }
-    }, 15000);
+    }, loadTimeoutDuration);
     
     try {
         await loadImageWithRetry(img, imageUrl, fallbackUrl);
@@ -1552,34 +1641,17 @@ async function loadImage(index) {
         }
     }
     
-    // 预加载策略优化：移动端预加载下一张和再下一张，桌面端预加载相邻图片
-    const isMobile = isMobileDevice();
+    // 预加载策略优化：只预加载下一张，避免网络拥塞
+    // 注意：isMobile 已经在上面声明过了，直接使用
     const nextIndex = index + 1;
-    const nextNextIndex = index + 2; // 移动端也预加载再下一张
-    const prevIndex = index - 1;
     
-    // 预加载下一张（移动端和桌面端都预加载，确保最后几张也能加载）
+    // 只预加载下一张（移动端和桌面端都只预加载下一张，避免同时加载太多）
     if (nextIndex < productImages.length) {
-        // 移动端：延迟预加载，避免阻塞当前图片，但延迟时间缩短以提高速度
-        // 桌面端：立即预加载
-        const delay = isMobile ? 300 : 0;
+        // 延迟预加载，避免阻塞当前图片加载
+        const delay = isMobile ? 800 : 500;
         setTimeout(() => {
             preloadImage(nextIndex);
         }, delay);
-    }
-    
-    // 移动端：也预加载再下一张，提高连续切换速度
-    if (isMobile && nextNextIndex < productImages.length) {
-        setTimeout(() => {
-            preloadImage(nextNextIndex);
-        }, 600);
-    }
-    
-    // 桌面端：也预加载上一张（移动端不预加载，节省资源）
-    if (!isMobile && prevIndex >= 0) {
-        setTimeout(() => {
-            preloadImage(prevIndex);
-        }, 500);
     }
 }
 
@@ -1648,13 +1720,13 @@ function showProduct(index) {
         });
     }, 0);
     
-    // 移动端：立即预加载下一张图片（特别是最后几张），提高切换速度
+    // 移动端和桌面端：延迟预加载下一张图片，提高切换速度
     const isMobile = isMobileDevice();
-    if (isMobile && index < productImages.length - 1) {
-        // 移动端：立即预加载下一张，减少等待时间
+    if (index < productImages.length - 1) {
+        // 延迟预加载下一张，避免阻塞当前图片显示
         setTimeout(() => {
             preloadImage(index + 1);
-        }, 300);
+        }, isMobile ? 800 : 500);
     }
     
     updateProgress();

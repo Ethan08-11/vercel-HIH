@@ -17,15 +17,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>HIH教堂设计产品调查问卷</title>
-    <!-- 资源提示：预连接和预加载优化 -->
+    <!-- 资源提示：预连接优化 -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="dns-prefetch" href="/Picture">
-    <!-- 预加载关键资源：第一张图片（WebP优先，JPG回退） -->
-    <link rel="preload" as="image" href="/Picture/1.webp" type="image/webp" fetchpriority="high">
-    <link rel="preload" as="image" href="/Picture/1.jpg" type="image/jpeg" fetchpriority="high">
-    <!-- 预加载第二张图片（提高切换速度） -->
-    <link rel="preload" as="image" href="/Picture/2.webp" type="image/webp" fetchpriority="low">
-    <link rel="preload" as="image" href="/Picture/2.jpg" type="image/jpeg" fetchpriority="low">
+    <!-- 注意：图片预加载由JavaScript控制，避免与JS逻辑冲突 -->
     <!-- 添加版本号防止缓存 - 使用时间戳确保移动端及时更新 -->
     <link rel="stylesheet" href="/style.css?v=202412071300">
 </head>
