@@ -2023,15 +2023,27 @@ async function showProduct(index) {
         loadingPlaceholder.style.display = 'flex';
     }
     
-    // 如果图片未加载完成，先加载图片
+    // 如果图片未加载完成，异步加载图片，不阻塞切换
+    // 优化：立即切换，不等待图片加载完成，图片在后台加载
     if (!isImageLoaded(index)) {
-        // 先加载图片，等待加载完成
-        try {
-            await loadImage(index);
-        } catch (err) {
-            console.error(`加载图片 ${index} 失败:`, err);
-            // 即使加载失败，也继续切换，避免卡住
+        // 检查是否已预加载
+        const isPreloaded = targetImg && targetImg.dataset.preloaded === 'true';
+        
+        if (isPreloaded) {
+            // 已预加载，立即设置src
+            const preloadSrc = targetImg.dataset.preloadSrc || targetImg.dataset.preloadFallback;
+            if (preloadSrc && (!targetImg.src || targetImg.src !== preloadSrc)) {
+                targetImg.src = preloadSrc;
+            }
         }
+        
+        // 异步加载图片，不阻塞切换（立即切换，图片在后台加载）
+        // 使用 setTimeout 确保不阻塞UI响应
+        setTimeout(() => {
+            loadImage(index).catch(err => {
+                console.error(`加载图片 ${index} 失败:`, err);
+            });
+        }, 0);
     }
     
     // 确保图片在切换前已经可见（避免空白）
@@ -2092,26 +2104,30 @@ async function showProduct(index) {
     startAutoPlay();
 }
 
-// 上一个产品（支持循环）
+// 上一个产品（支持循环）- 优化版：立即响应，不等待
 function previousQuestion() {
     stopAutoPlay(); // 用户手动操作时停止自动轮播
-    if (currentIndex > 0) {
-        showProduct(currentIndex - 1);
-    } else {
-        // 如果是第一张，循环到最后一张
-        showProduct(productImages.length - 1);
-    }
+    
+    // 立即执行，不等待异步操作
+    const targetIndex = currentIndex > 0 ? currentIndex - 1 : productImages.length - 1;
+    
+    // 使用 requestAnimationFrame 确保立即响应
+    requestAnimationFrame(() => {
+        showProduct(targetIndex);
+    });
 }
 
-// 下一个产品（支持循环）
+// 下一个产品（支持循环）- 优化版：立即响应，不等待
 function nextQuestion() {
     stopAutoPlay(); // 用户手动操作时停止自动轮播
-    if (currentIndex < productImages.length - 1) {
-        showProduct(currentIndex + 1);
-    } else {
-        // 如果是最后一张，循环回到第一张
-        showProduct(0);
-    }
+    
+    // 立即执行，不等待异步操作
+    const targetIndex = currentIndex < productImages.length - 1 ? currentIndex + 1 : 0;
+    
+    // 使用 requestAnimationFrame 确保立即响应
+    requestAnimationFrame(() => {
+        showProduct(targetIndex);
+    });
 }
 
 // 更新进度条
@@ -2140,24 +2156,57 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-// 触摸滑动支持（移动设备）
+// 触摸滑动支持（移动设备和平板）- 优化版：确保滑动优先，不受双击阻止影响
 let touchStartX = 0;
 let touchEndX = 0;
+let touchStartY = 0;
+let touchEndY = 0;
+let touchStartTime = 0;
+let isSwipeGesture = false; // 标记是否为滑动手势
 
+// 使用捕获阶段确保滑动检测优先执行
 document.addEventListener('touchstart', (e) => {
     touchStartX = e.changedTouches[0].screenX;
-}, { passive: true });
+    touchStartY = e.changedTouches[0].screenY;
+    touchStartTime = Date.now();
+    isSwipeGesture = false;
+}, { passive: true, capture: true });
+
+document.addEventListener('touchmove', (e) => {
+    if (!touchStartX) return;
+    
+    const currentX = e.changedTouches[0].screenX;
+    const currentY = e.changedTouches[0].screenY;
+    const diffX = Math.abs(touchStartX - currentX);
+    const diffY = Math.abs(touchStartY - currentY);
+    
+    // 如果水平滑动距离大于垂直滑动距离，且超过10px，认为是滑动手势
+    if (diffX > 10 && diffX > diffY) {
+        isSwipeGesture = true;
+    }
+}, { passive: true, capture: true });
 
 document.addEventListener('touchend', (e) => {
-    touchEndX = e.changedTouches[0].screenX;
-    handleSwipe();
-}, { passive: true });
-
-function handleSwipe() {
-    const swipeThreshold = 50; // 最小滑动距离
-    const diff = touchStartX - touchEndX;
+    if (!touchStartX) return;
     
-    if (Math.abs(diff) > swipeThreshold) {
+    touchEndX = e.changedTouches[0].screenX;
+    touchEndY = e.changedTouches[0].screenY;
+    const touchDuration = Date.now() - touchStartTime;
+    const diff = touchStartX - touchEndX;
+    const diffY = Math.abs(touchStartY - touchEndY);
+    
+    // 降低滑动阈值，提高响应速度（平板和移动端都使用更低的阈值）
+    const swipeThreshold = 30; // 降低到30px，提高响应速度
+    
+    // 判断是否为有效的水平滑动
+    // 1. 水平滑动距离大于阈值
+    // 2. 水平滑动距离大于垂直滑动距离（避免误触）
+    // 3. 滑动时间小于800ms（快速滑动）
+    // 4. 或者已经标记为滑动手势
+    if ((Math.abs(diff) > swipeThreshold && Math.abs(diff) > diffY && touchDuration < 800) || isSwipeGesture) {
+        // 立即停止自动轮播
+        stopAutoPlay();
+        
         if (diff > 0) {
             // 向左滑动，下一张
             nextQuestion();
@@ -2166,6 +2215,18 @@ function handleSwipe() {
             previousQuestion();
         }
     }
+    
+    // 重置状态
+    touchStartX = 0;
+    touchEndX = 0;
+    touchStartY = 0;
+    touchEndY = 0;
+    isSwipeGesture = false;
+}, { passive: true, capture: true });
+
+function handleSwipe() {
+    // 此函数已废弃，保留以兼容性
+    // 实际处理逻辑已移到 touchend 事件中
 }
 
 // 页面可见性变化时控制自动轮播
@@ -2213,34 +2274,59 @@ function initializeApp() {
     }
 }
 
-// 阻止移动端双击缩放
+// 阻止移动端双击缩放（优化版：不影响滑动操作）
 (function() {
     let lastTouchEnd = 0;
+    let lastTouchStart = 0;
+    let lastTouchStartX = 0;
+    let lastTouchStartY = 0;
+    let hasMoved = false; // 标记是否移动过
+    
     const preventDoubleZoom = function(e) {
         const now = Date.now();
-        if (now - lastTouchEnd <= 300) {
+        const timeSinceLastTouch = now - lastTouchEnd;
+        
+        // 只有在短时间内（300ms内）且没有移动的情况下才阻止双击缩放
+        // 如果用户滑动了，不阻止（允许滑动操作）
+        if (timeSinceLastTouch <= 300 && !hasMoved) {
             e.preventDefault();
             return false;
         }
         lastTouchEnd = now;
+        hasMoved = false; // 重置移动标记
     };
     
     // 如果是移动设备，阻止双击缩放
     if (isMobileDevice()) {
-        document.addEventListener('touchend', preventDoubleZoom, { passive: false });
-        
-        // 阻止双击手势
-        let lastTap = 0;
+        // 使用捕获阶段，但优先级低于滑动检测
         document.addEventListener('touchstart', function(e) {
-            const currentTime = new Date().getTime();
-            const tapLength = currentTime - lastTap;
+            const currentTime = Date.now();
+            const tapLength = currentTime - lastTouchStart;
+            const currentX = e.changedTouches[0].screenX;
+            const currentY = e.changedTouches[0].screenY;
             
-            if (tapLength < 300 && tapLength > 0) {
+            // 检查是否移动（与上次触摸位置比较）
+            if (lastTouchStartX !== 0 && lastTouchStartY !== 0) {
+                const moveDistance = Math.sqrt(
+                    Math.pow(currentX - lastTouchStartX, 2) + 
+                    Math.pow(currentY - lastTouchStartY, 2)
+                );
+                if (moveDistance > 5) { // 移动超过5px认为是滑动
+                    hasMoved = true;
+                }
+            }
+            
+            // 只有在短时间内（300ms内）且没有移动的情况下才阻止
+            if (tapLength < 300 && tapLength > 0 && !hasMoved) {
                 e.preventDefault();
                 return false;
             }
-            lastTap = currentTime;
-        }, { passive: false });
+            lastTouchStart = currentTime;
+            lastTouchStartX = currentX;
+            lastTouchStartY = currentY;
+        }, { passive: false, capture: false }); // 不使用捕获阶段，让滑动检测优先
+        
+        document.addEventListener('touchend', preventDoubleZoom, { passive: false, capture: false });
     }
 })();
 
