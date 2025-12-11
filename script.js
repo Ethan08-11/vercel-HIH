@@ -2281,4 +2281,3 @@ if (document.readyState === 'loading') {
     console.log('文档已加载完成，直接初始化');
     initializeApp();
 }
-
