@@ -204,8 +204,9 @@ async function updateHeartCount(productId, increment, userInfo = {}) {
         let newCount;
         
         if (!existing) {
-            // 如果不存在，创建新文档，初始值为2000+增量
-            const initialCount = 2000 + increment;
+            // 如果不存在，创建新文档，初始值为随机值(1500-2500)+增量
+            const randomInitial = getRandomInitialCount(productId);
+            const initialCount = randomInitial + increment;
             const result = await collection.insertOne({
                 productId: productId,
                 count: initialCount,
@@ -277,6 +278,18 @@ async function updateHeartCount(productId, increment, userInfo = {}) {
     }
 }
 
+// 生成基于产品ID的随机初始值（1500-2500之间）
+// 使用产品ID作为种子，确保每个产品的初始值是固定的
+function getRandomInitialCount(productId) {
+    // 使用简单的伪随机算法，基于产品ID生成固定随机数
+    // 这样每个产品的初始值都是固定的，不会每次运行都变化
+    const seed = productId * 12345 + 67890;
+    const random = Math.sin(seed) * 10000;
+    const normalized = (random - Math.floor(random));
+    // 生成1500-2500之间的随机数
+    return Math.floor(1500 + normalized * 1000);
+}
+
 // 初始化所有产品的爱心数量（如果不存在）
 async function initHeartCounts(productIds) {
     // 确保数据库连接
@@ -293,14 +306,16 @@ async function initHeartCounts(productIds) {
             // 先检查是否已存在，避免覆盖已有数据
             const existing = await collection.findOne({ productId: productId });
             if (!existing) {
+                // 生成随机初始值（1500-2500之间）
+                const initialCount = getRandomInitialCount(productId);
                 // 只有不存在时才创建
                 await collection.insertOne({
                     productId: productId,
-                    count: 2000,
+                    count: initialCount,
                     createdAt: new Date(),
                     updatedAt: new Date()
                 });
-                console.log(`✅ 产品 ${productId} 爱心数量已初始化: 2000`);
+                console.log(`✅ 产品 ${productId} 爱心数量已初始化: ${initialCount}`);
             } else {
                 console.log(`ℹ️ 产品 ${productId} 爱心数量已存在: ${existing.count}`);
             }
@@ -351,6 +366,7 @@ module.exports = {
     getHeartCounts,
     updateHeartCount,
     initHeartCounts,
-    recordHeartClick
+    recordHeartClick,
+    getRandomInitialCount
 };
 
