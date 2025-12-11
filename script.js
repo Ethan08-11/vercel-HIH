@@ -595,14 +595,19 @@ function createProductCard(item, index) {
         }
     }
     
-    // 预加载策略优化：移动端预加载下一张，桌面端预加载下一张
+    // 预加载策略优化：立即开始预加载后续图片
     if (index === 0) {
-        // 第一张加载后，延迟预加载下一张，避免阻塞当前加载
+        // 第一张加载后，立即开始预加载后续多张图片
+        // 减少延迟，更激进地预加载以提高切换速度
         setTimeout(() => {
-            if (1 < productImages.length) {
-                preloadImage(1);
+            // 预加载接下来的2-3张图片
+            const preloadCount = isMobile ? 2 : 3;
+            for (let i = 1; i <= preloadCount && i < productImages.length; i++) {
+                setTimeout(() => {
+                    preloadImage(i);
+                }, i * 100); // 错开时间，避免同时发起太多请求
             }
-        }, isMobile ? 1000 : 800); // 延迟预加载，确保当前图片优先加载
+        }, isMobile ? 300 : 200); // 减少延迟时间，更快开始预加载
     }
     
     // 图片加载完成事件（统一处理所有图片）
@@ -1325,7 +1330,8 @@ function loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries = 2, retryCou
 // 预加载队列，控制并发数量
 let preloadQueue = [];
 let activePreloads = 0;
-const MAX_PRELOAD_CONCURRENT = 2; // 最多同时预加载2张图片
+// 动态计算预加载并发数：移动端4个，桌面端6个（提高加载速度）
+const MAX_PRELOAD_CONCURRENT = isMobileDevice() ? 4 : 6;
 
 // 预加载图片（静默加载，不显示占位符，增强错误处理）
 function preloadImage(index) {
@@ -1350,6 +1356,9 @@ function preloadImage(index) {
     // 开始预加载
     img.dataset.preloading = 'true';
     activePreloads++;
+    
+    // 检测是否为移动设备
+    const isMobile = isMobileDevice();
     
     const item = productImages[index];
     // 所有端都优先使用WebP（与getImageUrl逻辑一致）
@@ -1382,8 +1391,8 @@ function preloadImage(index) {
     
     const preloadImg = new Image();
     
-    // 设置超时，移动端使用更长超时，因为网络可能较慢
-    const timeoutDuration = isMobile ? 15000 : 12000; // 移动端15秒，桌面端12秒
+    // 设置超时，优化超时时间（WebP格式加载更快）
+    const timeoutDuration = isMobile ? 10000 : 8000; // 移动端10秒，桌面端8秒（WebP加载更快）
     const timeout = setTimeout(() => {
         preloadImg.onload = null;
         preloadImg.onerror = null;
@@ -1757,13 +1766,17 @@ function showProduct(index) {
         });
     }, 0);
     
-    // 移动端和桌面端：延迟预加载下一张图片，提高切换速度
+    // 移动端和桌面端：立即预加载后续图片，提高切换速度
     const isMobile = isMobileDevice();
     if (index < productImages.length - 1) {
-        // 延迟预加载下一张，避免阻塞当前图片显示
-        setTimeout(() => {
-            preloadImage(index + 1);
-        }, isMobile ? 800 : 500);
+        // 减少延迟，更快预加载下一张图片
+        // 同时预加载接下来的多张图片（根据设备性能）
+        const preloadCount = isMobile ? 2 : 3;
+        for (let i = 1; i <= preloadCount && (index + i) < productImages.length; i++) {
+            setTimeout(() => {
+                preloadImage(index + i);
+            }, i * 100); // 错开时间，避免同时发起太多请求
+        }
     }
     
     updateProgress();
