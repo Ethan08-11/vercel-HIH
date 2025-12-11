@@ -1602,6 +1602,30 @@ function preloadImage(index) {
         if (preloadImg.src) {
             // 保存预加载的URL，供切换时使用
             img.dataset.preloadSrc = preloadImg.src;
+            // 直接设置img的src，这样切换时图片已经在缓存中，可以立即显示
+            // 使用Object.assign确保属性正确设置
+            if (!img.src || img.src !== preloadImg.src) {
+                img.src = preloadImg.src;
+            }
+            // 如果图片已经在缓存中（complete），标记为已加载
+            if (img.complete && img.naturalWidth > 0) {
+                img.dataset.loaded = 'true';
+                // 确保图片样式正确
+                img.style.setProperty('position', 'absolute', 'important');
+                img.style.setProperty('top', '50%', 'important');
+                img.style.setProperty('left', '50%', 'important');
+                img.style.setProperty('transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+                img.style.setProperty('-webkit-transform', 'translate(-50%, -50%) translateZ(0)', 'important');
+                img.style.opacity = '1';
+            } else {
+                // 图片还在加载，添加load事件监听
+                const onLoad = () => {
+                    img.dataset.loaded = 'true';
+                    img.style.opacity = '1';
+                    img.removeEventListener('load', onLoad);
+                };
+                img.addEventListener('load', onLoad, { once: true });
+            }
         }
         activePreloads--;
         processPreloadQueue(); // 处理队列中的下一个
@@ -1630,6 +1654,15 @@ function preloadImage(index) {
                 // 保存预加载的URL，供切换时使用
                 if (fallbackImg.src) {
                     img.dataset.preloadSrc = fallbackImg.src;
+                    // 直接设置img的src，这样切换时图片已经在缓存中
+                    if (!img.src || img.src !== fallbackImg.src) {
+                        img.src = fallbackImg.src;
+                    }
+                    // 如果图片已经在缓存中，标记为已加载
+                    if (img.complete && img.naturalWidth > 0) {
+                        img.dataset.loaded = 'true';
+                        img.style.opacity = '1';
+                    }
                 }
                 activePreloads--;
                 processPreloadQueue();
@@ -1930,17 +1963,32 @@ async function loadImage(index) {
         }
     }
     
-    // 预加载策略优化：只预加载下一张，避免网络拥塞
+    // 预加载策略优化：立即预加载下一张，减少滑动时的空白
     // 注意：isMobile 已经在上面声明过了，直接使用
     const nextIndex = index + 1;
     
-    // 只预加载下一张（移动端和桌面端都只预加载下一张，避免同时加载太多）
+    // 立即预加载下一张（不延迟），确保滑动时已经准备好
     if (nextIndex < productImages.length) {
-        // 延迟预加载，避免阻塞当前图片加载
-        const delay = isMobile ? 800 : 500;
-        setTimeout(() => {
+        // 使用 requestIdleCallback 或立即执行，不延迟
+        if (window.requestIdleCallback) {
+            requestIdleCallback(() => {
+                preloadImage(nextIndex);
+            }, { timeout: 0 });
+        } else {
+            // 立即预加载，不延迟
             preloadImage(nextIndex);
-        }, delay);
+        }
+    }
+    
+    // 同时预加载上一张（如果存在），支持向后滑动
+    if (index > 0) {
+        if (window.requestIdleCallback) {
+            requestIdleCallback(() => {
+                preloadImage(index - 1);
+            }, { timeout: 0 });
+        } else {
+            preloadImage(index - 1);
+        }
     }
 }
 
@@ -2030,20 +2078,52 @@ async function showProduct(index) {
         const isPreloaded = targetImg && targetImg.dataset.preloaded === 'true';
         
         if (isPreloaded) {
-            // 已预加载，立即设置src
+            // 已预加载，立即设置src并显示
             const preloadSrc = targetImg.dataset.preloadSrc || targetImg.dataset.preloadFallback;
-            if (preloadSrc && (!targetImg.src || targetImg.src !== preloadSrc)) {
-                targetImg.src = preloadSrc;
+            if (preloadSrc) {
+                // 如果src还没设置或不同，立即设置
+                if (!targetImg.src || targetImg.src !== preloadSrc) {
+                    targetImg.src = preloadSrc;
+                }
+                
+                // 检查图片是否已经在浏览器缓存中（预加载可能已完成）
+                if (targetImg.complete && targetImg.naturalWidth > 0) {
+                    // 图片已在缓存中，立即显示
+                    targetImg.dataset.loaded = 'true';
+                    targetImg.style.opacity = '1';
+                    if (loadingPlaceholder) {
+                        loadingPlaceholder.style.display = 'none';
+                    }
+                } else {
+                    // 图片正在加载，等待加载完成
+                    const onLoad = () => {
+                        targetImg.dataset.loaded = 'true';
+                        targetImg.style.opacity = '1';
+                        if (loadingPlaceholder) {
+                            loadingPlaceholder.style.display = 'none';
+                        }
+                        targetImg.removeEventListener('load', onLoad);
+                    };
+                    targetImg.addEventListener('load', onLoad, { once: true });
+                }
+            }
+        } else {
+            // 未预加载，异步加载图片，不阻塞切换
+            // 使用 requestIdleCallback 或 setTimeout 确保不阻塞UI响应
+            if (window.requestIdleCallback) {
+                requestIdleCallback(() => {
+                    loadImage(index).catch(err => {
+                        console.error(`加载图片 ${index} 失败:`, err);
+                    });
+                }, { timeout: 0 });
+            } else {
+                setTimeout(() => {
+                    loadImage(index).catch(err => {
+                        console.error(`加载图片 ${index} 失败:`, err);
+                    });
+                }, 0);
             }
         }
-        
-        // 异步加载图片，不阻塞切换（立即切换，图片在后台加载）
-        // 使用 setTimeout 确保不阻塞UI响应
-        setTimeout(() => {
-            loadImage(index).catch(err => {
-                console.error(`加载图片 ${index} 失败:`, err);
-            });
-        }, 0);
     }
     
     // 确保图片在切换前已经可见（避免空白）
@@ -2087,14 +2167,23 @@ async function showProduct(index) {
     // 移动端和桌面端：立即预加载后续图片，提高切换速度
     const isMobile = isMobileDevice();
     if (index < productImages.length - 1) {
-        // 减少延迟，更快预加载下一张图片
-        // 同时预加载接下来的多张图片（根据设备性能）
+        // 立即预加载下一张图片（不延迟），确保滑动时已经准备好
+        if (index + 1 < productImages.length) {
+            preloadImage(index + 1);
+        }
+        
+        // 预加载接下来的多张图片（根据设备性能），错开时间避免网络拥塞
         const preloadCount = isMobile ? 2 : 3;
-        for (let i = 1; i <= preloadCount && (index + i) < productImages.length; i++) {
+        for (let i = 2; i <= preloadCount && (index + i) < productImages.length; i++) {
             setTimeout(() => {
                 preloadImage(index + i);
-            }, i * 100); // 错开时间，避免同时发起太多请求
+            }, (i - 1) * 50); // 缩短延迟时间（50ms），更快预加载
         }
+    }
+    
+    // 同时预加载上一张图片（如果存在），支持向后滑动
+    if (index > 0) {
+        preloadImage(index - 1);
     }
     
     updateProgress();
@@ -2183,6 +2272,18 @@ document.addEventListener('touchmove', (e) => {
     // 如果水平滑动距离大于垂直滑动距离，且超过10px，认为是滑动手势
     if (diffX > 10 && diffX > diffY) {
         isSwipeGesture = true;
+        
+        // 在滑动过程中立即预加载下一张图片（提前准备，减少空白）
+        if (diffX > 20 && currentIndex !== undefined) {
+            const swipeDirection = touchStartX > currentX ? 'left' : 'right';
+            const nextIndex = swipeDirection === 'left' ? currentIndex + 1 : currentIndex - 1;
+            
+            // 确保索引有效
+            if (nextIndex >= 0 && nextIndex < productImages.length) {
+                // 立即预加载，不等待
+                preloadImage(nextIndex);
+            }
+        }
     }
 }, { passive: true, capture: true });
 
