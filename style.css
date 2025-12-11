@@ -62,12 +62,16 @@ body {
 
 .carousel-wrapper {
     display: flex;
-    transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     overflow: visible;
     width: auto;
     position: relative;
     /* 确保轮播包装器可以包含所有产品 */
     min-width: 100%;
+    /* 优化渲染性能，减少空白闪烁 */
+    will-change: transform;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
 }
 
 .product-card {
@@ -153,7 +157,7 @@ body {
     height: auto;
     
     object-fit: contain;
-    transition: opacity 0.3s ease;
+    transition: opacity 0.2s ease;
     opacity: 0;
     
     /* 防止移动端图片被拖拽和缩放 */
@@ -176,6 +180,10 @@ body {
     
     /* 确保图片在容器中居中，不影响其他元素 */
     margin: 0 !important;
+    
+    /* 确保图片加载完成后立即显示，避免空白 */
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
 }
 
 .product-image[data-loaded="true"] {
