@@ -22,9 +22,9 @@
     <!-- 资源提示：预连接优化 -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="dns-prefetch" href="/Picture">
-    <!-- 预加载关键图片：前3张产品图片（提高首屏加载速度） -->
+    <!-- 预加载关键图片：前3张产品图片的WebP格式（提高首屏加载速度） -->
+    <!-- 注意：只预加载WebP格式，因为代码优先使用WebP；JPG作为回退格式，由JavaScript自动加载 -->
     <link rel="preload" href="/Picture/1.webp?v=202412071300" as="image" type="image/webp" fetchpriority="high">
-    <link rel="preload" href="/Picture/1.jpg?v=202412071300" as="image" type="image/jpeg" fetchpriority="high">
     <link rel="preload" href="/Picture/2.webp?v=202412071300" as="image" type="image/webp" fetchpriority="low">
     <link rel="preload" href="/Picture/3.webp?v=202412071300" as="image" type="image/webp" fetchpriority="low">
     <!-- 注意：图片预加载由JavaScript控制，避免与JS逻辑冲突 -->
