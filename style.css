@@ -160,7 +160,8 @@ body {
     height: auto;
     
     object-fit: contain;
-    transition: opacity 0.1s ease;
+    /* 移除opacity过渡，避免闪烁 - 由JavaScript控制显示 */
+    transition: none;
     opacity: 0;
     
     /* 防止移动端图片被拖拽和缩放 */
