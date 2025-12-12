@@ -896,12 +896,18 @@ function startServerFast() {
     const isZeabur = isZeaburEnvironment();
     const port = parseInt(process.env.PORT || '3000', 10);
     
-    console.log(`\n🚀 正在启动服务器...`);
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`🚀 正在启动HTTP服务器...`);
     console.log(`   端口: ${port}`);
+    console.log(`   监听地址: 0.0.0.0`);
     console.log(`   环境: ${isZeabur ? 'Zeabur (生产)' : '本地开发'}`);
     console.log(`   NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`${'='.repeat(60)}`);
     
     try {
+        // 确保在启动前输出日志
+        console.log('📡 正在创建HTTP服务器实例...');
+        
         serverInstance = app.listen(port, '0.0.0.0', () => {
             console.log(`\n✅ 服务器运行成功！`);
             console.log(`   端口: ${port}`);
@@ -937,37 +943,101 @@ function startServerFast() {
             console.log('  GET  /api/export - 导出所有数据为JSON文件');
             console.log('  GET  /api/heart-counts - 获取所有产品的爱心数量');
             console.log('  POST /api/heart-count - 更新产品的爱心数量');
-            console.log('\n服务器已就绪，可以接受请求！\n');
+            console.log('\n' + '='.repeat(60));
+            console.log('✅ 服务器已就绪，可以接受请求！');
+            console.log('='.repeat(60) + '\n');
+            
+            // 确保日志被刷新
+            if (process.stdout && typeof process.stdout.flush === 'function') {
+                process.stdout.flush();
+            }
         }).on('error', (err) => {
-            console.error('❌ 服务器启动失败:', err.message);
+            console.error('\n' + '='.repeat(60));
+            console.error('❌ HTTP服务器启动失败！');
+            console.error('='.repeat(60));
+            console.error('   错误消息:', err.message);
             console.error('   错误代码:', err.code);
             if (err.code === 'EADDRINUSE') {
                 console.error(`   端口 ${port} 已被占用`);
                 if (!isZeabur) {
                     console.error('   解决方案: 关闭占用端口的进程或使用其他端口');
+                } else {
+                    console.error('   这可能表示Zeabur端口配置有问题');
                 }
             } else if (err.code === 'EACCES') {
                 console.error(`   端口 ${port} 权限不足`);
+                console.error('   这通常表示需要root权限或端口号小于1024');
+            } else if (err.code === 'EADDRNOTAVAIL') {
+                console.error(`   地址 0.0.0.0:${port} 不可用`);
             }
-            console.error('   错误堆栈:', err.stack);
-            process.exit(1);
+            if (err.syscall) {
+                console.error('   系统调用:', err.syscall);
+            }
+            if (err.address) {
+                console.error('   地址:', err.address);
+            }
+            if (err.port) {
+                console.error('   端口:', err.port);
+            }
+            if (err.stack) {
+                console.error('\n   错误堆栈:');
+                console.error(err.stack);
+            }
+            console.error('='.repeat(60));
+            
+            // 确保错误日志被刷新
+            if (process.stderr && typeof process.stderr.flush === 'function') {
+                process.stderr.flush();
+            }
+            
+            // 在Zeabur上等待一段时间让日志输出
+            const waitTime = isZeabur ? 5000 : 1000;
+            setTimeout(() => {
+                process.exit(1);
+            }, waitTime);
         });
         
         // 确保服务器实例被正确保存
         if (!serverInstance) {
-            throw new Error('服务器实例创建失败');
+            throw new Error('服务器实例创建失败：app.listen() 返回了 null 或 undefined');
         }
         
+        console.log('✅ HTTP服务器实例创建成功');
         return serverInstance;
     } catch (error) {
-        console.error('❌ 启动服务器时发生异常:', error);
+        console.error('\n' + '='.repeat(60));
+        console.error('❌ 启动服务器时发生异常:');
+        console.error('='.repeat(60));
+        console.error('   错误类型:', error.constructor.name);
         console.error('   错误消息:', error.message);
-        console.error('   错误堆栈:', error.stack);
-        process.exit(1);
+        if (error.stack) {
+            console.error('\n   错误堆栈:');
+            console.error(error.stack);
+        }
+        console.error('='.repeat(60));
+        
+        // 确保错误日志被刷新
+        if (process.stderr && typeof process.stderr.flush === 'function') {
+            process.stderr.flush();
+        }
+        
+        // 在Zeabur上等待一段时间让日志输出
+        const waitTime = isZeabur ? 5000 : 1000;
+        setTimeout(() => {
+            process.exit(1);
+        }, waitTime);
     }
 }
 
 module.exports = app;
+
+// 立即输出启动信息（在模块加载时）
+console.log('='.repeat(60));
+console.log('🚀 应用开始启动...');
+console.log('   时间:', new Date().toISOString());
+console.log('   Node版本:', process.version);
+console.log('   工作目录:', __dirname);
+console.log('='.repeat(60));
 
 // 本地开发时启动服务器
 if (require.main === module) {
@@ -975,29 +1045,60 @@ if (require.main === module) {
     (async () => {
         try {
             console.log('\n📋 服务器启动流程开始...');
-            console.log('   时间:', new Date().toISOString());
-            console.log('   Node版本:', process.version);
-            console.log('   工作目录:', __dirname);
+            console.log('   进程ID:', process.pid);
+            console.log('   平台:', process.platform);
+            console.log('   架构:', process.arch);
+            
+            // 立即输出环境变量信息（不输出敏感信息）
+            console.log('\n📋 环境变量检查:');
+            console.log('   NODE_ENV:', process.env.NODE_ENV || '未设置');
+            console.log('   PORT:', process.env.PORT || '未设置（将使用3000）');
+            console.log('   MONGODB_URI:', process.env.MONGODB_URI ? '已设置' : '未设置');
+            console.log('   ZEABUR:', process.env.ZEABUR || '未设置');
             
             await initServer();
             
             console.log('\n✅ 服务器初始化完成！');
+            console.log('   服务器已就绪，等待请求...');
         } catch (error) {
-            console.error('\n❌ 服务器启动失败:');
+            console.error('\n' + '='.repeat(60));
+            console.error('❌ 服务器启动失败:');
+            console.error('='.repeat(60));
             console.error('   错误类型:', error.constructor.name);
             console.error('   错误消息:', error.message);
             if (error.code) {
                 console.error('   错误代码:', error.code);
             }
-            if (error.stack) {
-                console.error('   错误堆栈:', error.stack);
+            if (error.syscall) {
+                console.error('   系统调用:', error.syscall);
             }
+            if (error.address) {
+                console.error('   地址:', error.address);
+            }
+            if (error.port) {
+                console.error('   端口:', error.port);
+            }
+            if (error.stack) {
+                console.error('\n   错误堆栈:');
+                console.error(error.stack);
+            }
+            console.error('='.repeat(60));
             
             // 在 Zeabur 上，即使启动失败也要等待一段时间，让日志输出
             const isZeabur = isZeaburEnvironment();
-            const waitTime = isZeabur ? 5000 : 2000;
+            const waitTime = isZeabur ? 10000 : 2000; // Zeabur上等待10秒确保日志输出
             console.error(`\n⏳ ${waitTime/1000}秒后退出...`);
+            
+            // 确保错误信息被刷新
+            if (process.stdout && typeof process.stdout.flush === 'function') {
+                process.stdout.flush();
+            }
+            if (process.stderr && typeof process.stderr.flush === 'function') {
+                process.stderr.flush();
+            }
+            
             setTimeout(() => {
+                console.error('💀 进程退出');
                 process.exit(1);
             }, waitTime);
         }
