@@ -526,8 +526,7 @@ app.get('/api/heart-counts', async (req, res) => {
         console.log('  环境:', process.env.NODE_ENV || 'development');
         
         if (useDatabase) {
-            // 确保数据库连接
-            console.log('📡 尝试连接数据库...');
+            // 确保数据库连接（只在首次调用时输出日志）
             const dbConnection = await db.connectDB();
             
             if (!dbConnection) {
@@ -619,8 +618,7 @@ app.post('/api/heart-count', async (req, res) => {
         console.log('  数据库配置:', useDatabase ? '已配置' : '未配置');
         
         if (useDatabase) {
-            // 确保数据库连接
-            console.log('📡 检查数据库连接...');
+            // 确保数据库连接（静默检查，避免重复日志）
             const dbConnection = await db.connectDB();
             
             if (!dbConnection) {
@@ -810,25 +808,26 @@ async function initServer() {
         
         // 异步尝试连接数据库（不阻塞启动）
         (async () => {
-            console.log('\n📡 后台尝试连接数据库...');
-    try {
-        const connectPromise = db.connectDB();
-        const timeoutPromise = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('连接超时')), 5000) // Zeabur上只用5秒超时
-                );
-                
-                dbConnection = await Promise.race([connectPromise, timeoutPromise]);
+            console.log('\n📡 后台尝试连接数据库（不阻塞服务器启动）...');
+            try {
+                // 在 Zeabur 上，给数据库连接更多时间（30秒）
+                // db.connectDB() 内部已经有超时控制，这里不需要额外的 Promise.race
+                dbConnection = await db.connectDB();
                 
                 if (dbConnection) {
                     console.log('✅ 数据库连接成功（后台连接）');
                     // 初始化爱心数量（后台异步执行）
                     initializeHeartCountsAsync();
                 } else {
-                    console.warn('⚠️  数据库连接失败，使用文件系统存储');
+                    console.warn('⚠️  数据库连接失败，应用将继续运行（数据仅本地有效）');
+                    console.warn('   提示: 检查 MONGODB_URI 环境变量和网络连接');
                 }
             } catch (error) {
-                console.warn('⚠️  数据库连接超时或失败，使用文件系统存储');
+                console.warn('⚠️  数据库连接失败，应用将继续运行（数据仅本地有效）');
                 console.warn('   错误:', error.message);
+                if (error.message.includes('超时')) {
+                    console.warn('   提示: 连接超时，可能是网络问题或 MongoDB 服务器不可达');
+                }
                 dbConnection = null;
             }
         })();

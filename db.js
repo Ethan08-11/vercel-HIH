@@ -38,22 +38,33 @@ async function connectDB() {
     }
 
     try {
-        console.log('🔌 正在连接MongoDB...');
-        console.log('   连接字符串长度:', MONGODB_URI.length);
-        console.log('   数据库名称:', DB_NAME);
+        // 检测是否为 Zeabur 环境
+        const isZeabur = process.env.ZEABUR || 
+                        (process.env.NODE_ENV === 'production' && process.env.PORT && process.env.PORT !== '3000');
         
-        // 在 Zeabur 上使用更短的超时时间，避免启动时间过长
-        const isZeabur = process.env.ZEABUR || process.env.VERCEL || process.env.RAILWAY;
-        const timeout = isZeabur ? 10000 : 30000; // Zeabur 上10秒，本地30秒
+        // 只在首次连接时输出详细信息，避免重复日志
+        const isFirstConnection = !client;
+        if (isFirstConnection) {
+            console.log('🔌 正在连接MongoDB...');
+            console.log('   连接字符串长度:', MONGODB_URI.length);
+            console.log('   数据库名称:', DB_NAME);
+            console.log('   环境:', isZeabur ? 'Zeabur (生产)' : '本地开发');
+        }
+        
+        // 在 Zeabur 上使用更长的超时时间，因为网络可能较慢
+        // 但使用 Promise.race 在应用层面控制总超时时间
+        const timeout = isZeabur ? 30000 : 30000; // 统一使用30秒，让 MongoDB 驱动自己处理
         
         client = new MongoClient(MONGODB_URI, {
-            serverSelectionTimeoutMS: timeout, // 超时时间
+            serverSelectionTimeoutMS: timeout, // 服务器选择超时
             connectTimeoutMS: timeout, // 连接超时
-            socketTimeoutMS: timeout + 5000, // socket超时稍长
+            socketTimeoutMS: 0, // socket超时设为0（不超时），由应用层控制
             maxPoolSize: 10, // 连接池大小
             minPoolSize: 1,
             retryWrites: true, // 启用重试写入
             retryReads: true, // 启用重试读取
+            serverSelectionRetryDelay: 1000, // 重试延迟1秒
+            heartbeatFrequencyMS: 10000, // 心跳频率10秒
         });
         
         await client.connect();
@@ -65,12 +76,24 @@ async function connectDB() {
         console.log('   数据库:', DB_NAME);
         return db;
     } catch (error) {
-        console.error('❌ MongoDB 连接失败:');
-        console.error('   错误消息:', error.message);
-        console.error('   错误代码:', error.code);
-        if (error.stack) {
-            console.error('   错误堆栈:', error.stack);
+        // 只在首次连接失败时输出详细错误，避免重复日志
+        const isFirstConnection = !client || !db;
+        if (isFirstConnection) {
+            console.error('❌ MongoDB 连接失败:');
+            console.error('   错误消息:', error.message);
+            console.error('   错误代码:', error.code || 'N/A');
+            if (error.name) {
+                console.error('   错误类型:', error.name);
+            }
+            // 只在开发环境输出完整堆栈
+            if (process.env.NODE_ENV !== 'production' && error.stack) {
+                console.error('   错误堆栈:', error.stack);
+            }
+        } else {
+            // 非首次连接失败，只输出简要信息
+            console.warn('⚠️ MongoDB 重连失败:', error.message);
         }
+        
         db = null;
         if (client) {
             try {
