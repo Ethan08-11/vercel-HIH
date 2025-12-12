@@ -1607,10 +1607,10 @@ function preloadImage(index) {
             if (!img.src || img.src !== preloadImg.src) {
                 img.src = preloadImg.src;
             }
-            // 如果图片已经在缓存中（complete），标记为已加载
+            // 如果图片已经在缓存中（complete），立即标记为已加载
             if (img.complete && img.naturalWidth > 0) {
                 img.dataset.loaded = 'true';
-                // 确保图片样式正确
+                // 确保图片样式正确（立即应用）
                 img.style.setProperty('position', 'absolute', 'important');
                 img.style.setProperty('top', '50%', 'important');
                 img.style.setProperty('left', '50%', 'important');
@@ -1618,13 +1618,18 @@ function preloadImage(index) {
                 img.style.setProperty('-webkit-transform', 'translate(-50%, -50%) translateZ(0)', 'important');
                 img.style.opacity = '1';
             } else {
-                // 图片还在加载，添加load事件监听
+                // 图片还在加载，立即添加load事件监听（不等待）
                 const onLoad = () => {
                     img.dataset.loaded = 'true';
                     img.style.opacity = '1';
                     img.removeEventListener('load', onLoad);
                 };
-                img.addEventListener('load', onLoad, { once: true });
+                // 如果图片已经加载完成但事件还没触发，立即调用
+                if (img.complete) {
+                    onLoad();
+                } else {
+                    img.addEventListener('load', onLoad, { once: true });
+                }
             }
         }
         activePreloads--;
@@ -1992,7 +1997,7 @@ async function loadImage(index) {
     }
 }
 
-// 检查图片是否已加载完成
+// 检查图片是否已加载完成（优化版：更快速的检查）
 function isImageLoaded(index) {
     const card = document.querySelector(`[data-index="${index}"]`);
     if (!card) return false;
@@ -2000,7 +2005,16 @@ function isImageLoaded(index) {
     const img = card.querySelector('.product-image');
     if (!img) return false;
     
-    // 检查图片是否已加载完成
+    // 检查图片是否已加载完成（优先检查预加载状态）
+    // 如果已预加载，即使还没设置loaded标记，也认为已加载
+    if (img.dataset.preloaded === 'true' && img.src && img.complete && img.naturalWidth > 0) {
+        // 预加载的图片已准备好，立即标记为已加载
+        img.dataset.loaded = 'true';
+        img.style.opacity = '1';
+        return true;
+    }
+    
+    // 标准检查：图片已加载完成
     return img.dataset.loaded === 'true' && 
            img.src && 
            img.complete && 
@@ -2071,7 +2085,7 @@ async function showProduct(index) {
         loadingPlaceholder.style.display = 'flex';
     }
     
-    // 如果图片未加载完成，异步加载图片，不阻塞切换
+    // 如果图片未加载完成，立即检查并加载，不阻塞切换
     // 优化：立即切换，不等待图片加载完成，图片在后台加载
     if (!isImageLoaded(index)) {
         // 检查是否已预加载
@@ -2086,7 +2100,8 @@ async function showProduct(index) {
                     targetImg.src = preloadSrc;
                 }
                 
-                // 检查图片是否已经在浏览器缓存中（预加载可能已完成）
+                // 立即检查图片是否已经在浏览器缓存中（预加载可能已完成）
+                // 使用同步检查，避免延迟
                 if (targetImg.complete && targetImg.naturalWidth > 0) {
                     // 图片已在缓存中，立即显示
                     targetImg.dataset.loaded = 'true';
@@ -2095,7 +2110,7 @@ async function showProduct(index) {
                         loadingPlaceholder.style.display = 'none';
                     }
                 } else {
-                    // 图片正在加载，等待加载完成
+                    // 图片正在加载，立即添加load监听器（不等待）
                     const onLoad = () => {
                         targetImg.dataset.loaded = 'true';
                         targetImg.style.opacity = '1';
@@ -2104,31 +2119,25 @@ async function showProduct(index) {
                         }
                         targetImg.removeEventListener('load', onLoad);
                     };
-                    targetImg.addEventListener('load', onLoad, { once: true });
+                    // 如果图片已经加载完成但事件还没触发，立即调用
+                    if (targetImg.complete) {
+                        onLoad();
+                    } else {
+                        targetImg.addEventListener('load', onLoad, { once: true });
+                    }
                 }
             }
         } else {
-            // 未预加载，异步加载图片，不阻塞切换
-            // 使用 requestIdleCallback 或 setTimeout 确保不阻塞UI响应
-            if (window.requestIdleCallback) {
-                requestIdleCallback(() => {
-                    loadImage(index).catch(err => {
-                        console.error(`加载图片 ${index} 失败:`, err);
-                    });
-                }, { timeout: 0 });
-            } else {
-                setTimeout(() => {
-                    loadImage(index).catch(err => {
-                        console.error(`加载图片 ${index} 失败:`, err);
-                    });
-                }, 0);
-            }
+            // 未预加载，立即开始加载图片（不延迟）
+            loadImage(index).catch(err => {
+                console.error(`加载图片 ${index} 失败:`, err);
+            });
         }
     }
     
     // 确保图片在切换前已经可见（避免空白）
     if (targetImg) {
-        // 确保图片样式正确
+        // 确保图片样式正确（立即应用，不等待）
         targetImg.style.setProperty('position', 'absolute', 'important');
         targetImg.style.setProperty('top', '50%', 'important');
         targetImg.style.setProperty('left', '50%', 'important');
@@ -2139,15 +2148,16 @@ async function showProduct(index) {
         targetImg.style.setProperty('max-width', '100%', 'important');
         targetImg.style.setProperty('max-height', '100%', 'important');
         
-        // 如果图片已加载，确保opacity为1
+        // 立即检查图片是否已加载（同步检查，不等待）
         if (targetImg.dataset.loaded === 'true' && targetImg.complete && targetImg.naturalWidth > 0) {
+            // 图片已加载，立即显示
             targetImg.style.opacity = '1';
             // 隐藏加载占位符
             if (loadingPlaceholder) {
                 loadingPlaceholder.style.display = 'none';
             }
-        } else if (loadingPlaceholder) {
-            // 如果图片还没加载完成，确保显示加载占位符
+        } else if (loadingPlaceholder && !targetImg.dataset.preloaded) {
+            // 如果图片还没加载完成且未预加载，显示加载占位符
             loadingPlaceholder.style.display = 'flex';
         }
     }
@@ -2158,32 +2168,42 @@ async function showProduct(index) {
     // 计算并应用transform，确保只显示当前产品
     // 使用容器宽度来计算，确保精确移动
     const translateX = -index * containerWidth;
+    // 立即应用变换，不等待 requestAnimationFrame，减少延迟
     carouselWrapper.style.transform = `translateX(${translateX}px)`;
     carouselWrapper.style.willChange = 'transform';
-    
-    // 强制重新计算布局
-    carouselWrapper.offsetHeight;
+    // 强制重新计算布局（同步执行，确保立即生效）
+    void carouselWrapper.offsetHeight;
     
     // 移动端和桌面端：立即预加载后续图片，提高切换速度
     const isMobile = isMobileDevice();
     if (index < productImages.length - 1) {
         // 立即预加载下一张图片（不延迟），确保滑动时已经准备好
         if (index + 1 < productImages.length) {
-            preloadImage(index + 1);
+            // 使用 requestIdleCallback 或立即执行，不延迟
+            if (window.requestIdleCallback) {
+                requestIdleCallback(() => preloadImage(index + 1), { timeout: 0 });
+            } else {
+                preloadImage(index + 1);
+            }
         }
         
         // 预加载接下来的多张图片（根据设备性能），错开时间避免网络拥塞
         const preloadCount = isMobile ? 2 : 3;
         for (let i = 2; i <= preloadCount && (index + i) < productImages.length; i++) {
+            // 缩短延迟时间（30ms），更快预加载
             setTimeout(() => {
                 preloadImage(index + i);
-            }, (i - 1) * 50); // 缩短延迟时间（50ms），更快预加载
+            }, (i - 1) * 30);
         }
     }
     
     // 同时预加载上一张图片（如果存在），支持向后滑动
     if (index > 0) {
-        preloadImage(index - 1);
+        if (window.requestIdleCallback) {
+            requestIdleCallback(() => preloadImage(index - 1), { timeout: 0 });
+        } else {
+            preloadImage(index - 1);
+        }
     }
     
     updateProgress();
@@ -2200,10 +2220,8 @@ function previousQuestion() {
     // 立即执行，不等待异步操作
     const targetIndex = currentIndex > 0 ? currentIndex - 1 : productImages.length - 1;
     
-    // 使用 requestAnimationFrame 确保立即响应
-    requestAnimationFrame(() => {
-        showProduct(targetIndex);
-    });
+    // 直接调用，不使用 requestAnimationFrame，减少延迟
+    showProduct(targetIndex);
 }
 
 // 下一个产品（支持循环）- 优化版：立即响应，不等待
@@ -2213,10 +2231,8 @@ function nextQuestion() {
     // 立即执行，不等待异步操作
     const targetIndex = currentIndex < productImages.length - 1 ? currentIndex + 1 : 0;
     
-    // 使用 requestAnimationFrame 确保立即响应
-    requestAnimationFrame(() => {
-        showProduct(targetIndex);
-    });
+    // 直接调用，不使用 requestAnimationFrame，减少延迟
+    showProduct(targetIndex);
 }
 
 // 更新进度条
