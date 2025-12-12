@@ -1498,8 +1498,8 @@ function loadImageWithRetry(img, imageUrl, fallbackUrl, maxRetries = 2, retryCou
 // 预加载队列，控制并发数量
 let preloadQueue = [];
 let activePreloads = 0;
-// 动态计算预加载并发数：移动端6个，桌面端8个（更激进的预加载策略）
-const MAX_PRELOAD_CONCURRENT = isMobileDevice() ? 6 : 8;
+// 动态计算预加载并发数：移动端8个，桌面端8个（更激进的预加载策略，确保图片提前准备好）
+const MAX_PRELOAD_CONCURRENT = isMobileDevice() ? 8 : 8;
 
 // 预加载图片（静默加载，不显示占位符，增强错误处理）
 function preloadImage(index) {
@@ -2089,17 +2089,17 @@ async function showProduct(index) {
     // 显示加载占位符（如果图片还没加载完成）
     const loadingPlaceholder = targetCard ? targetCard.querySelector('.image-loading') : null;
     
-    // 检查图片是否已加载完成
+    // 检查图片是否已加载完成（移动端和电脑端使用相同的快速切换逻辑）
     const isMobile = isMobileDevice();
     let imageReady = isImageLoaded(index);
     
-    // 移动端：强制等待图片完全加载后再切换，避免白屏
-    if (isMobile && !imageReady && targetImg) {
+    // 统一处理：快速检查并加载，不阻塞切换（移动端和电脑端相同逻辑）
+    if (!imageReady && targetImg) {
         // 检查是否已预加载
         const isPreloaded = targetImg.dataset.preloaded === 'true';
         
         if (isPreloaded) {
-            // 已预加载，确保图片src已设置并等待加载完成
+            // 已预加载，立即设置src并检查
             const preloadSrc = targetImg.dataset.preloadSrc || targetImg.dataset.preloadFallback;
             if (preloadSrc) {
                 // 如果src还没设置或不同，立即设置
@@ -2107,140 +2107,38 @@ async function showProduct(index) {
                     targetImg.src = preloadSrc;
                 }
                 
-                // 等待图片真正加载完成（使用轮询+事件监听双重保障）
-                await new Promise((resolve) => {
-                    let resolved = false;
-                    const maxWaitTime = 2000; // 最多等待2秒
-                    const startTime = Date.now();
-                    
-                    const checkAndResolve = () => {
-                        if (resolved) return;
-                        if (targetImg.complete && targetImg.naturalWidth > 0 && targetImg.naturalHeight > 0) {
-                            resolved = true;
-                            targetImg.dataset.loaded = 'true';
-                            targetImg.style.opacity = '1';
-                            if (loadingPlaceholder) {
-                                loadingPlaceholder.style.display = 'none';
-                            }
-                            resolve();
-                        } else if (Date.now() - startTime > maxWaitTime) {
-                            // 超时后继续，不阻塞切换
-                            resolved = true;
-                            resolve();
-                        }
-                    };
-                    
-                    // 立即检查一次
-                    checkAndResolve();
-                    if (resolved) return;
-                    
-                    // 添加load事件监听
+                // 立即检查图片是否已经在浏览器缓存中（预加载可能已完成）
+                if (targetImg.complete && targetImg.naturalWidth > 0 && targetImg.naturalHeight > 0) {
+                    // 图片已在缓存中，立即显示
+                    targetImg.dataset.loaded = 'true';
+                    targetImg.style.opacity = '1';
+                    targetImg.style.transition = 'none';
+                    if (loadingPlaceholder) {
+                        loadingPlaceholder.style.display = 'none';
+                    }
+                    imageReady = true;
+                } else {
+                    // 图片正在加载，添加load事件监听（不等待，异步处理）
                     const onLoad = () => {
-                        if (resolved) return;
-                        resolved = true;
                         targetImg.dataset.loaded = 'true';
                         targetImg.style.opacity = '1';
+                        targetImg.style.transition = 'none';
                         if (loadingPlaceholder) {
                             loadingPlaceholder.style.display = 'none';
                         }
                         targetImg.removeEventListener('load', onLoad);
-                        targetImg.removeEventListener('error', onError);
-                        resolve();
                     };
                     
-                    const onError = () => {
-                        if (resolved) return;
-                        resolved = true;
-                        targetImg.removeEventListener('load', onLoad);
-                        targetImg.removeEventListener('error', onError);
-                        resolve(); // 即使失败也继续，不阻塞
-                    };
-                    
-                    targetImg.addEventListener('load', onLoad, { once: true });
-                    targetImg.addEventListener('error', onError, { once: true });
-                    
-                    // 轮询检查（每50ms检查一次，确保及时响应）
-                    const checkInterval = setInterval(() => {
-                        checkAndResolve();
-                        if (resolved) {
-                            clearInterval(checkInterval);
-                        }
-                    }, 50);
-                    
-                    // 超时清理
-                    setTimeout(() => {
-                        clearInterval(checkInterval);
-                        if (!resolved) {
-                            resolved = true;
-                            resolve();
-                        }
-                    }, maxWaitTime);
-                });
-                
-                imageReady = isImageLoaded(index);
-            }
-        } else {
-            // 未预加载，立即开始加载并等待完成
-            try {
-                await loadImage(index);
-                // 再次确认图片已加载
-                await new Promise((resolve) => {
-                    const maxWaitTime = 2000;
-                    const startTime = Date.now();
-                    
-                    const checkAndResolve = () => {
-                        if (targetImg.complete && targetImg.naturalWidth > 0 && targetImg.naturalHeight > 0) {
-                            targetImg.dataset.loaded = 'true';
-                            targetImg.style.opacity = '1';
-                            if (loadingPlaceholder) {
-                                loadingPlaceholder.style.display = 'none';
-                            }
-                            resolve();
-                        } else if (Date.now() - startTime > maxWaitTime) {
-                            resolve();
-                        }
-                    };
-                    
-                    checkAndResolve();
-                    if (targetImg.complete && targetImg.naturalWidth > 0) return;
-                    
-                    const checkInterval = setInterval(() => {
-                        checkAndResolve();
-                        if (targetImg.complete && targetImg.naturalWidth > 0) {
-                            clearInterval(checkInterval);
-                            resolve();
-                        }
-                    }, 50);
-                    
-                    setTimeout(() => {
-                        clearInterval(checkInterval);
-                        resolve();
-                    }, maxWaitTime);
-                });
-                
-                imageReady = isImageLoaded(index);
-            } catch (error) {
-                console.error(`加载图片 ${index} 失败:`, error);
-            }
-        }
-    } else if (!imageReady && targetImg) {
-        // 桌面端：快速检查并加载，不阻塞切换
-        const isPreloaded = targetImg.dataset.preloaded === 'true';
-        
-        if (isPreloaded) {
-            const preloadSrc = targetImg.dataset.preloadSrc || targetImg.dataset.preloadFallback;
-            if (preloadSrc && (!targetImg.src || targetImg.src !== preloadSrc)) {
-                targetImg.src = preloadSrc;
-            }
-            if (targetImg.complete && targetImg.naturalWidth > 0) {
-                targetImg.dataset.loaded = 'true';
-                targetImg.style.opacity = '1';
-                if (loadingPlaceholder) {
-                    loadingPlaceholder.style.display = 'none';
+                    // 如果图片已经加载完成但事件还没触发，立即调用
+                    if (targetImg.complete && targetImg.naturalWidth > 0) {
+                        onLoad();
+                    } else {
+                        targetImg.addEventListener('load', onLoad, { once: true });
+                    }
                 }
-                imageReady = true;
             }
         } else {
+            // 未预加载，立即开始加载图片（不阻塞切换，异步处理）
             loadImage(index).catch(err => {
                 console.error(`加载图片 ${index} 失败:`, err);
             });
@@ -2260,192 +2158,40 @@ async function showProduct(index) {
         targetImg.style.setProperty('max-width', '100%', 'important');
         targetImg.style.setProperty('max-height', '100%', 'important');
         
-        // 移动端：再次确认图片已加载并可见，避免白屏
-        if (isMobile) {
-            // 强制检查图片是否真正加载完成
-            const imgLoaded = targetImg.dataset.loaded === 'true' && 
-                              targetImg.src && 
-                              targetImg.complete && 
-                              targetImg.naturalWidth > 0 &&
-                              targetImg.naturalHeight > 0;
-            
-            if (imgLoaded) {
-                // 图片已加载，立即显示（不淡入，避免闪烁）
-                targetImg.style.opacity = '1';
-                targetImg.style.transition = 'none'; // 移除过渡，立即显示
-                targetImg.style.visibility = 'visible'; // 确保可见
-                // 隐藏加载占位符
-                if (loadingPlaceholder) {
-                    loadingPlaceholder.style.display = 'none';
-                }
-            } else {
-                // 图片未加载完成，移动端不切换，等待加载完成
-                // 这已经在上面处理了，这里只是确保状态正确
-                if (loadingPlaceholder) {
-                    loadingPlaceholder.style.display = 'flex';
-                }
-                targetImg.style.opacity = '0';
+        // 统一处理：检查图片是否已加载（移动端和电脑端相同逻辑）
+        const imgLoaded = targetImg.dataset.loaded === 'true' && 
+                          targetImg.src && 
+                          targetImg.complete && 
+                          targetImg.naturalWidth > 0 &&
+                          targetImg.naturalHeight > 0;
+        
+        if (imgLoaded) {
+            // 图片已加载，立即显示（不淡入，避免闪烁）
+            targetImg.style.opacity = '1';
+            targetImg.style.transition = 'none'; // 移除过渡，立即显示
+            targetImg.style.visibility = 'visible'; // 确保可见
+            // 隐藏加载占位符
+            if (loadingPlaceholder) {
+                loadingPlaceholder.style.display = 'none';
             }
         } else {
-            // 桌面端：快速检查
-            const imgLoaded = targetImg.dataset.loaded === 'true' && 
-                              targetImg.src && 
-                              targetImg.complete && 
-                              targetImg.naturalWidth > 0;
-            
-            if (imgLoaded) {
-                targetImg.style.opacity = '1';
-                targetImg.style.transition = 'none';
-                if (loadingPlaceholder) {
+            // 图片未加载完成
+            if (loadingPlaceholder) {
+                // 如果已预加载，隐藏占位符（避免闪烁）
+                if (targetImg.dataset.preloaded === 'true') {
                     loadingPlaceholder.style.display = 'none';
+                } else {
+                    loadingPlaceholder.style.display = 'flex';
                 }
-            } else {
-                if (loadingPlaceholder) {
-                    if (!targetImg.dataset.preloaded) {
-                        loadingPlaceholder.style.display = 'flex';
-                    } else {
-                        loadingPlaceholder.style.display = 'none';
-                    }
-                }
-                if (targetImg.style.opacity !== '1') {
-                    targetImg.style.opacity = '0';
-                }
+            }
+            // 确保图片opacity为0，等待加载完成
+            if (targetImg.style.opacity !== '1') {
+                targetImg.style.opacity = '0';
             }
         }
     }
     
-    // 移动端：在切换前强制确认图片已准备好，未准备好则不切换，彻底避免白屏
-    if (isMobile && targetImg) {
-        // 多重验证：确保图片数据完整、已加载、已设置src、且真正可见
-        const finalCheck = () => {
-            return targetImg.dataset.loaded === 'true' && 
-                   targetImg.src && 
-                   targetImg.complete && 
-                   targetImg.naturalWidth > 0 &&
-                   targetImg.naturalHeight > 0 &&
-                   targetImg.style.opacity === '1' &&
-                   targetImg.offsetWidth > 0 &&
-                   targetImg.offsetHeight > 0;
-        };
-        
-        if (!finalCheck()) {
-            // 图片未准备好，强制等待直到准备好（最多等待3秒）
-            let resolved = false;
-            await new Promise(resolve => {
-                const maxWait = 3000; // 最多等待3秒
-                const startTime = Date.now();
-                
-                const checkAndResolve = () => {
-                    if (resolved) return;
-                    
-                    // 确保图片src已设置
-                    if (!targetImg.src) {
-                        const preloadSrc = targetImg.dataset.preloadSrc || targetImg.dataset.preloadFallback || targetImg.dataset.src;
-                        if (preloadSrc) {
-                            targetImg.src = preloadSrc;
-                        }
-                    }
-                    
-                    // 检查图片是否真正准备好
-                    if (finalCheck()) {
-                        resolved = true;
-                        // 确保图片可见
-                        targetImg.style.opacity = '1';
-                        targetImg.style.visibility = 'visible';
-                        targetImg.style.transition = 'none';
-                        if (loadingPlaceholder) {
-                            loadingPlaceholder.style.display = 'none';
-                        }
-                        resolve();
-                        return;
-                    }
-                    
-                    // 超时后也继续（避免永久阻塞），但记录警告
-                    if (Date.now() - startTime > maxWait) {
-                        resolved = true;
-                        console.warn(`图片 ${index + 1} 加载超时，但继续切换`);
-                        // 即使超时，也尝试显示图片
-                        if (targetImg.src && targetImg.complete) {
-                            targetImg.dataset.loaded = 'true';
-                            targetImg.style.opacity = '1';
-                            targetImg.style.visibility = 'visible';
-                        }
-                        resolve();
-                    }
-                };
-                
-                // 立即检查一次
-                checkAndResolve();
-                if (resolved) return;
-                
-                // 添加load事件监听
-                const onLoad = () => {
-                    if (resolved) return;
-                    targetImg.dataset.loaded = 'true';
-                    targetImg.style.opacity = '1';
-                    targetImg.style.visibility = 'visible';
-                    targetImg.style.transition = 'none';
-                    if (loadingPlaceholder) {
-                        loadingPlaceholder.style.display = 'none';
-                    }
-                    targetImg.removeEventListener('load', onLoad);
-                    targetImg.removeEventListener('error', onError);
-                    resolved = true;
-                    resolve();
-                };
-                
-                const onError = () => {
-                    if (resolved) return;
-                    targetImg.removeEventListener('load', onLoad);
-                    targetImg.removeEventListener('error', onError);
-                    // 即使失败也继续，避免永久阻塞
-                    resolved = true;
-                    resolve();
-                };
-                
-                // 如果图片已经加载完成但事件还没触发
-                if (targetImg.complete && targetImg.naturalWidth > 0 && targetImg.naturalHeight > 0) {
-                    onLoad();
-                    return;
-                }
-                
-                targetImg.addEventListener('load', onLoad, { once: true });
-                targetImg.addEventListener('error', onError, { once: true });
-                
-                // 轮询检查（每30ms检查一次，更频繁）
-                const checkInterval = setInterval(() => {
-                    checkAndResolve();
-                    if (resolved) {
-                        clearInterval(checkInterval);
-                    }
-                }, 30);
-                
-                // 超时清理
-                setTimeout(() => {
-                    clearInterval(checkInterval);
-                    if (!resolved) {
-                        resolved = true;
-                        resolve();
-                    }
-                }, maxWait);
-            });
-            
-            // 最后再次确认
-            if (!finalCheck()) {
-                // 如果还是没准备好，强制设置状态（避免永久白屏）
-                if (targetImg.src && targetImg.complete) {
-                    targetImg.dataset.loaded = 'true';
-                    targetImg.style.opacity = '1';
-                    targetImg.style.visibility = 'visible';
-                    if (loadingPlaceholder) {
-                        loadingPlaceholder.style.display = 'none';
-                    }
-                }
-            }
-        }
-    }
-    
-    // 更新当前索引
+    // 更新当前索引（移动端和电脑端统一逻辑，不等待）
     currentIndex = index;
     
     // 计算并应用transform，确保只显示当前产品
@@ -2457,56 +2203,33 @@ async function showProduct(index) {
     // 强制重新计算布局（同步执行，确保立即生效）
     void carouselWrapper.offsetHeight;
     
-    // 移动端和桌面端：更激进的预加载策略，提前预加载更多图片
+    // 移动端和桌面端：统一的预加载策略，更激进的预加载确保切换前图片已准备好
     // 注意：isMobile 已在函数前面声明，直接使用
     
-    // 移动端：立即预加载下一张图片（最高优先级），确保切换前已准备好
-    if (isMobile) {
-        // 立即预加载下一张图片，不延迟
-        if (index + 1 < productImages.length) {
-            preloadImage(index + 1);
-            // 移动端：等待下一张图片预加载完成（最多等待500ms）
-            const nextCard = document.querySelector(`[data-index="${index + 1}"]`);
-            const nextImg = nextCard ? nextCard.querySelector('.product-image') : null;
-            if (nextImg && nextImg.dataset.preloaded !== 'true') {
-                // 异步等待预加载完成，不阻塞当前切换
-                setTimeout(() => {
-                    if (nextImg.dataset.preloaded !== 'true') {
-                        // 如果还没预加载完成，再次尝试
-                        preloadImage(index + 1);
-                    }
-                }, 100);
-            }
-        }
-        
-        // 预加载接下来的2-3张图片
-        const preloadCount = 3;
-        for (let i = 2; i <= preloadCount && (index + i) < productImages.length; i++) {
-            setTimeout(() => {
-                preloadImage(index + i);
-            }, (i - 1) * 30);
-        }
-        
-        // 同时预加载上一张图片（如果存在），支持向后滑动
-        if (index > 0) {
-            preloadImage(index - 1);
-        }
-    } else {
-        // 桌面端：快速预加载，不等待
-        if (index + 1 < productImages.length) {
-            preloadImage(index + 1);
-        }
-        
-        const preloadCount = 5;
-        for (let i = 2; i <= preloadCount && (index + i) < productImages.length; i++) {
-            setTimeout(() => {
-                preloadImage(index + i);
-            }, (i - 1) * 20);
-        }
-        
-        if (index > 0) {
-            preloadImage(index - 1);
-        }
+    // 立即预加载下一张图片（最高优先级），确保切换前已准备好
+    if (index + 1 < productImages.length) {
+        preloadImage(index + 1);
+    }
+    
+    // 预加载接下来的多张图片（移动端更激进，预加载更多）
+    const preloadCount = isMobile ? 5 : 5; // 移动端和桌面端都预加载5张
+    for (let i = 2; i <= preloadCount && (index + i) < productImages.length; i++) {
+        // 错开时间，避免网络拥塞
+        setTimeout(() => {
+            preloadImage(index + i);
+        }, (i - 1) * 15); // 缩短到15ms，更快预加载
+    }
+    
+    // 同时预加载上一张图片（如果存在），支持向后滑动
+    if (index > 0) {
+        preloadImage(index - 1);
+    }
+    
+    // 预加载更前面的图片（向后滑动时使用）
+    if (index > 1) {
+        setTimeout(() => {
+            preloadImage(index - 2);
+        }, 30);
     }
     
     updateProgress();
@@ -2516,87 +2239,25 @@ async function showProduct(index) {
     startAutoPlay();
 }
 
-// 上一个产品（支持循环）- 优化版：移动端等待图片准备好
-async function previousQuestion() {
+// 上一个产品（支持循环）- 统一逻辑：快速切换，不等待
+function previousQuestion() {
     stopAutoPlay(); // 用户手动操作时停止自动轮播
     
     // 立即执行，不等待异步操作
     const targetIndex = currentIndex > 0 ? currentIndex - 1 : productImages.length - 1;
     
-    // 移动端：确保图片准备好后再切换
-    const isMobile = isMobileDevice();
-    if (isMobile) {
-        // 先预加载目标图片，确保切换前已准备好
-        const targetCard = document.querySelector(`[data-index="${targetIndex}"]`);
-        const targetImg = targetCard ? targetCard.querySelector('.product-image') : null;
-        
-        if (targetImg && !isImageLoaded(targetIndex)) {
-            // 图片未准备好，先预加载
-            if (targetImg.dataset.preloaded !== 'true') {
-                preloadImage(targetIndex);
-            }
-            
-            // 等待图片准备好（最多等待1秒）
-            await new Promise(resolve => {
-                const maxWait = 1000;
-                const startTime = Date.now();
-                const checkInterval = setInterval(() => {
-                    if (isImageLoaded(targetIndex) || Date.now() - startTime > maxWait) {
-                        clearInterval(checkInterval);
-                        resolve();
-                    }
-                }, 50);
-                setTimeout(() => {
-                    clearInterval(checkInterval);
-                    resolve();
-                }, maxWait);
-            });
-        }
-    }
-    
-    // 调用showProduct（移动端会再次确认图片已准备好）
+    // 直接调用，快速切换（移动端和电脑端相同逻辑）
     showProduct(targetIndex);
 }
 
-// 下一个产品（支持循环）- 优化版：移动端等待图片准备好
-async function nextQuestion() {
+// 下一个产品（支持循环）- 统一逻辑：快速切换，不等待
+function nextQuestion() {
     stopAutoPlay(); // 用户手动操作时停止自动轮播
     
     // 立即执行，不等待异步操作
     const targetIndex = currentIndex < productImages.length - 1 ? currentIndex + 1 : 0;
     
-    // 移动端：确保图片准备好后再切换
-    const isMobile = isMobileDevice();
-    if (isMobile) {
-        // 先预加载目标图片，确保切换前已准备好
-        const targetCard = document.querySelector(`[data-index="${targetIndex}"]`);
-        const targetImg = targetCard ? targetCard.querySelector('.product-image') : null;
-        
-        if (targetImg && !isImageLoaded(targetIndex)) {
-            // 图片未准备好，先预加载
-            if (targetImg.dataset.preloaded !== 'true') {
-                preloadImage(targetIndex);
-            }
-            
-            // 等待图片准备好（最多等待1秒）
-            await new Promise(resolve => {
-                const maxWait = 1000;
-                const startTime = Date.now();
-                const checkInterval = setInterval(() => {
-                    if (isImageLoaded(targetIndex) || Date.now() - startTime > maxWait) {
-                        clearInterval(checkInterval);
-                        resolve();
-                    }
-                }, 50);
-                setTimeout(() => {
-                    clearInterval(checkInterval);
-                    resolve();
-                }, maxWait);
-            });
-        }
-    }
-    
-    // 调用showProduct（移动端会再次确认图片已准备好）
+    // 直接调用，快速切换（移动端和电脑端相同逻辑）
     showProduct(targetIndex);
 }
 
