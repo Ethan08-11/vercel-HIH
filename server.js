@@ -231,11 +231,13 @@ app.get('/Picture/:filename', (req, res) => {
     });
 });
 
-// 根路径返回 index.html
+// 根路径返回 index.html（必须在静态文件服务之后，但优先级更高）
 app.get('/', (req, res) => {
     try {
         const timestamp = new Date().toISOString();
         console.log(`[${timestamp}] 请求根路径，发送 index.html`);
+        console.log(`   文件路径: ${path.join(__dirname, 'index.html')}`);
+        console.log(`   文件存在: ${require('fs').existsSync(path.join(__dirname, 'index.html'))}`);
         
         // 设置HTML文件的缓存头 - 强制不缓存，确保移动端及时更新
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
@@ -243,17 +245,55 @@ app.get('/', (req, res) => {
         res.setHeader('Expires', '0');
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         
+        const indexPath = path.join(__dirname, 'index.html');
+        
+        // 检查文件是否存在
+        if (!require('fs').existsSync(indexPath)) {
+            console.error('❌ index.html 文件不存在:', indexPath);
+            res.status(404).send(`
+                <html>
+                    <head><title>文件未找到</title></head>
+                    <body>
+                        <h1>404 - 文件未找到</h1>
+                        <p>index.html 文件不存在于: ${indexPath}</p>
+                        <p>当前工作目录: ${__dirname}</p>
+                    </body>
+                </html>
+            `);
+            return;
+        }
+        
         res.sendFile('index.html', { root: __dirname }, (err) => {
             if (err) {
                 console.error('❌ 发送 index.html 失败:', err.message);
-                res.status(500).send('无法加载页面: ' + err.message);
+                console.error('   错误代码:', err.code);
+                console.error('   错误堆栈:', err.stack);
+                res.status(500).send(`
+                    <html>
+                        <head><title>服务器错误</title></head>
+                        <body>
+                            <h1>500 - 服务器错误</h1>
+                            <p>无法加载页面: ${err.message}</p>
+                            <p>文件路径: ${indexPath}</p>
+                        </body>
+                    </html>
+                `);
             } else {
                 console.log('✅ index.html 发送成功');
             }
         });
     } catch (error) {
         console.error('发送 index.html 时出错:', error);
-        res.status(500).send('无法加载页面: ' + error.message);
+        console.error('   错误堆栈:', error.stack);
+        res.status(500).send(`
+            <html>
+                <head><title>服务器错误</title></head>
+                <body>
+                    <h1>500 - 服务器错误</h1>
+                    <p>无法加载页面: ${error.message}</p>
+                </body>
+            </html>
+        `);
     }
 });
 
@@ -265,7 +305,40 @@ app.get('/index.html', (req, res) => {
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.sendFile('index.html', { root: __dirname });
+    
+    const indexPath = path.join(__dirname, 'index.html');
+    if (!require('fs').existsSync(indexPath)) {
+        console.error('❌ index.html 文件不存在:', indexPath);
+        res.status(404).send('文件未找到');
+        return;
+    }
+    
+    res.sendFile('index.html', { root: __dirname }, (err) => {
+        if (err) {
+            console.error('❌ 发送 index.html 失败:', err.message);
+            res.status(500).send('无法加载页面: ' + err.message);
+        } else {
+            console.log('✅ index.html 发送成功');
+        }
+    });
+});
+
+// 添加健康检查路由（用于诊断）
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        env: {
+            NODE_ENV: process.env.NODE_ENV || 'development',
+            PORT: process.env.PORT || 3000
+        },
+        files: {
+            indexHtml: require('fs').existsSync(path.join(__dirname, 'index.html')),
+            scriptJs: require('fs').existsSync(path.join(__dirname, 'script.js')),
+            styleCss: require('fs').existsSync(path.join(__dirname, 'style.css'))
+        }
+    });
 });
 
 // 确保数据目录存在
