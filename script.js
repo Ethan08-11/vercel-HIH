@@ -1239,7 +1239,12 @@ async function updateHeartCount(productIndex, increment) {
                     // 检查是否是数据库连接失败的情况
                     if (result.databaseAvailable === false || result.localOnly === true) {
                         // 数据库不可用，但这是预期的，不抛出错误
-                        console.warn(`⚠️ 产品 ${productId} 数据仅本地有效:`, result.message);
+                        // 只在首次出现时输出警告，避免重复日志
+                        if (!window._dbWarningShown) {
+                            console.warn(`⚠️ 数据库连接失败，数据仅本地有效，无法保存到服务器`);
+                            console.warn(`   提示: 请检查 Zeabur 环境变量中的 MONGODB_URI 配置`);
+                            window._dbWarningShown = true;
+                        }
                         return; // 直接返回，不重试
                     }
                     throw new Error(result.message || '服务器返回失败');
@@ -1255,8 +1260,12 @@ async function updateHeartCount(productIndex, increment) {
                 
                 if (isDatabaseError) {
                     // 数据库连接失败，不重试，直接使用本地值
-                    console.warn(`⚠️ 数据库连接失败，数据仅本地有效 (尝试 ${retryCount}/${maxRetries}):`, error.message);
-                    console.warn('   数据已更新到本地，但无法保存到服务器');
+                    // 只在首次出现时输出警告，避免重复日志
+                    if (!window._dbWarningShown) {
+                        console.warn(`⚠️ 数据库连接失败，数据仅本地有效，无法保存到服务器`);
+                        console.warn(`   提示: 请检查 Zeabur 环境变量中的 MONGODB_URI 配置`);
+                        window._dbWarningShown = true;
+                    }
                     return; // 直接返回，不继续重试
                 }
                 

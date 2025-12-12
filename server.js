@@ -37,6 +37,38 @@ app.use((req, res, next) => {
     next();
 });
 
+// 处理 site.webmanifest 和 manifest.json 请求 - 必须在静态文件服务之前，避免404错误
+app.get('/site.webmanifest', (req, res) => {
+    const manifest = {
+        "name": "HIH教堂设计产品调查问卷",
+        "short_name": "HIH问卷",
+        "description": "图片轮播式产品调查问卷",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#667eea",
+        "theme_color": "#764ba2",
+        "icons": []
+    };
+    res.setHeader('Content-Type', 'application/manifest+json');
+    res.json(manifest);
+});
+
+app.get('/manifest.json', (req, res) => {
+    // 重定向到 site.webmanifest 或返回相同内容
+    const manifest = {
+        "name": "HIH教堂设计产品调查问卷",
+        "short_name": "HIH问卷",
+        "description": "图片轮播式产品调查问卷",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#667eea",
+        "theme_color": "#764ba2",
+        "icons": []
+    };
+    res.setHeader('Content-Type', 'application/manifest+json');
+    res.json(manifest);
+});
+
 // 启用压缩（gzip/brotli）- 必须在静态文件服务之前
 app.use(compression({
     filter: (req, res) => {
@@ -169,22 +201,6 @@ app.get('/script.js', (req, res) => {
 // 处理favicon请求 - 避免404错误
 app.get('/favicon.ico', (req, res) => {
     res.status(204).end(); // 返回204 No Content
-});
-
-// 处理 site.webmanifest 请求 - 避免404错误
-app.get('/site.webmanifest', (req, res) => {
-    const manifest = {
-        "name": "HIH教堂设计产品调查问卷",
-        "short_name": "HIH问卷",
-        "description": "图片轮播式产品调查问卷",
-        "start_url": "/",
-        "display": "standalone",
-        "background_color": "#667eea",
-        "theme_color": "#764ba2",
-        "icons": []
-    };
-    res.setHeader('Content-Type', 'application/manifest+json');
-    res.json(manifest);
 });
 
 // 处理图片请求
