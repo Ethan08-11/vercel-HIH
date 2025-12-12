@@ -159,21 +159,25 @@ app.get('/script.js', (req, res) => {
     });
 });
 
-app.get('/script.js', (req, res) => {
-    console.log('请求 /script.js');
-    res.sendFile('script.js', { root: __dirname }, (err) => {
-        if (err) {
-            console.error('发送 script.js 失败:', err);
-            res.status(404).send('File not found');
-        } else {
-            console.log('script.js 发送成功');
-        }
-    });
-});
-
 // 处理favicon请求 - 避免404错误
 app.get('/favicon.ico', (req, res) => {
     res.status(204).end(); // 返回204 No Content
+});
+
+// 处理 site.webmanifest 请求 - 避免404错误
+app.get('/site.webmanifest', (req, res) => {
+    const manifest = {
+        "name": "HIH教堂设计产品调查问卷",
+        "short_name": "HIH问卷",
+        "description": "图片轮播式产品调查问卷",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#667eea",
+        "theme_color": "#764ba2",
+        "icons": []
+    };
+    res.setHeader('Content-Type', 'application/manifest+json');
+    res.json(manifest);
 });
 
 // 处理图片请求
@@ -891,33 +895,39 @@ function initializeHeartCountsAsync() {
 function startServerFast() {
     const isZeabur = isZeaburEnvironment();
     const port = parseInt(process.env.PORT || '3000', 10);
-        
+    
+    console.log(`\n🚀 正在启动服务器...`);
+    console.log(`   端口: ${port}`);
+    console.log(`   环境: ${isZeabur ? 'Zeabur (生产)' : '本地开发'}`);
+    console.log(`   NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
+    
+    try {
         serverInstance = app.listen(port, '0.0.0.0', () => {
-        console.log(`\n✅ 服务器运行成功！`);
-        console.log(`   端口: ${port}`);
-        console.log(`   环境: ${isZeabur ? 'Zeabur (生产)' : '本地开发'}`);
-        
-        if (!isZeabur) {
-            // 只在本地开发环境显示详细网络信息
-            const networkInterfaces = os.networkInterfaces();
-            let localIP = 'localhost';
+            console.log(`\n✅ 服务器运行成功！`);
+            console.log(`   端口: ${port}`);
+            console.log(`   环境: ${isZeabur ? 'Zeabur (生产)' : '本地开发'}`);
             
-            for (const interfaceName in networkInterfaces) {
-                const interfaces = networkInterfaces[interfaceName];
-                for (const iface of interfaces) {
-                    if (iface.family === 'IPv4' && !iface.internal) {
-                        localIP = iface.address;
-                        break;
+            if (!isZeabur) {
+                // 只在本地开发环境显示详细网络信息
+                const networkInterfaces = os.networkInterfaces();
+                let localIP = 'localhost';
+                
+                for (const interfaceName in networkInterfaces) {
+                    const interfaces = networkInterfaces[interfaceName];
+                    for (const iface of interfaces) {
+                        if (iface.family === 'IPv4' && !iface.internal) {
+                            localIP = iface.address;
+                            break;
+                        }
                     }
+                    if (localIP !== 'localhost') break;
                 }
-                if (localIP !== 'localhost') break;
-            }
-            
-            console.log(`   本地访问: http://localhost:${port}`);
-            console.log(`   局域网访问: http://${localIP}:${port}`);
+                
+                console.log(`   本地访问: http://localhost:${port}`);
+                console.log(`   局域网访问: http://${localIP}:${port}`);
             } else {
-            // Zeabur环境：显示简洁信息
-            console.log(`   HTTP服务已就绪，等待请求...`);
+                // Zeabur环境：显示简洁信息
+                console.log(`   HTTP服务已就绪，等待请求...`);
             }
             
             console.log('\n可用API:');
@@ -926,20 +936,35 @@ function startServerFast() {
             console.log('  GET  /api/products/:productId - 获取指定产品的提交记录');
             console.log('  GET  /api/export - 导出所有数据为JSON文件');
             console.log('  GET  /api/heart-counts - 获取所有产品的爱心数量');
-        console.log('  POST /api/heart-count - 更新产品的爱心数量');
-        console.log('\n服务器已就绪，可以接受请求！\n');
+            console.log('  POST /api/heart-count - 更新产品的爱心数量');
+            console.log('\n服务器已就绪，可以接受请求！\n');
         }).on('error', (err) => {
-        console.error('❌ 服务器启动失败:', err.message);
+            console.error('❌ 服务器启动失败:', err.message);
+            console.error('   错误代码:', err.code);
             if (err.code === 'EADDRINUSE') {
-            console.error(`   端口 ${port} 已被占用`);
-            if (!isZeabur) {
-                console.error('   解决方案: 关闭占用端口的进程或使用其他端口');
+                console.error(`   端口 ${port} 已被占用`);
+                if (!isZeabur) {
+                    console.error('   解决方案: 关闭占用端口的进程或使用其他端口');
                 }
-                }
-                process.exit(1);
+            } else if (err.code === 'EACCES') {
+                console.error(`   端口 ${port} 权限不足`);
+            }
+            console.error('   错误堆栈:', err.stack);
+            process.exit(1);
         });
-    
-    return serverInstance;
+        
+        // 确保服务器实例被正确保存
+        if (!serverInstance) {
+            throw new Error('服务器实例创建失败');
+        }
+        
+        return serverInstance;
+    } catch (error) {
+        console.error('❌ 启动服务器时发生异常:', error);
+        console.error('   错误消息:', error.message);
+        console.error('   错误堆栈:', error.stack);
+        process.exit(1);
+    }
 }
 
 module.exports = app;
@@ -949,17 +974,32 @@ if (require.main === module) {
     // 使用 try-catch 包装，确保所有错误都被捕获
     (async () => {
         try {
+            console.log('\n📋 服务器启动流程开始...');
+            console.log('   时间:', new Date().toISOString());
+            console.log('   Node版本:', process.version);
+            console.log('   工作目录:', __dirname);
+            
             await initServer();
+            
+            console.log('\n✅ 服务器初始化完成！');
         } catch (error) {
-            console.error('❌ 服务器启动失败:', error);
-            console.error('错误详情:', error.message);
-            if (error.stack) {
-                console.error('错误堆栈:', error.stack);
+            console.error('\n❌ 服务器启动失败:');
+            console.error('   错误类型:', error.constructor.name);
+            console.error('   错误消息:', error.message);
+            if (error.code) {
+                console.error('   错误代码:', error.code);
             }
+            if (error.stack) {
+                console.error('   错误堆栈:', error.stack);
+            }
+            
             // 在 Zeabur 上，即使启动失败也要等待一段时间，让日志输出
+            const isZeabur = isZeaburEnvironment();
+            const waitTime = isZeabur ? 5000 : 2000;
+            console.error(`\n⏳ ${waitTime/1000}秒后退出...`);
             setTimeout(() => {
                 process.exit(1);
-            }, 2000);
+            }, waitTime);
         }
     })();
 }
