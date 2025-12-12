@@ -2227,7 +2227,7 @@ async function showProduct(index) {
     void carouselWrapper.offsetHeight;
     
     // 移动端和桌面端：更激进的预加载策略，提前预加载更多图片
-    const isMobile = isMobileDevice();
+    // 注意：isMobile 已在函数前面声明，直接使用
     
     // 立即预加载下一张图片（最高优先级）
     if (index + 1 < productImages.length) {
