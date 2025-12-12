@@ -8,9 +8,8 @@
     "dev": "nodemon server.js",
     "build": "echo Build completed - No build step required for this project",
     "sync": "node sync-data.js",
-    "test-connection": "node test-connection.js",
-    "convert-webp": "node convert-to-webp.js",
-    "update-images": "node update-images-to-webp.js"
+    "sync-api": "node sync-data-api.js",
+    "fix-env": "powershell -ExecutionPolicy Bypass -File fix-env.ps1"
   },
   "keywords": [
     "questionnaire",

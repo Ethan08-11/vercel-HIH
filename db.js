@@ -45,9 +45,9 @@ async function connectDB() {
         // 只在首次连接时输出详细信息，避免重复日志
         const isFirstConnection = !client;
         if (isFirstConnection) {
-            console.log('🔌 正在连接MongoDB...');
-            console.log('   连接字符串长度:', MONGODB_URI.length);
-            console.log('   数据库名称:', DB_NAME);
+        console.log('🔌 正在连接MongoDB...');
+        console.log('   连接字符串长度:', MONGODB_URI.length);
+        console.log('   数据库名称:', DB_NAME);
             console.log('   环境:', isZeabur ? 'Zeabur (生产)' : '本地开发');
         }
         
@@ -69,18 +69,15 @@ async function connectDB() {
                 
                 // 创建或重新创建客户端
                 if (attempt === 1 || !client) {
-                    client = new MongoClient(MONGODB_URI, {
+        client = new MongoClient(MONGODB_URI, {
                         serverSelectionTimeoutMS: timeout, // 服务器选择超时
-                        connectTimeoutMS: timeout, // 连接超时
+            connectTimeoutMS: timeout, // 连接超时
                         socketTimeoutMS: 60000, // socket超时60秒（避免无限等待）
-                        maxPoolSize: 10, // 连接池大小
-                        minPoolSize: 1,
-                        retryWrites: true, // 启用重试写入
-                        retryReads: true, // 启用重试读取
-                        serverSelectionRetryDelay: 1000, // 重试延迟1秒
+            maxPoolSize: 10, // 连接池大小
+            minPoolSize: 1,
+            retryWrites: true, // 启用重试写入
+            retryReads: true, // 启用重试读取
                         heartbeatFrequencyMS: 10000, // 心跳频率10秒
-                        directConnection: false, // 允许通过副本集连接
-                        maxIdleTimeMS: 30000, // 空闲连接30秒后关闭
                     });
                 }
                 
@@ -92,23 +89,23 @@ async function connectDB() {
                     );
                     await Promise.race([connectPromise, timeoutPromise]);
                 } else {
-                    await client.connect();
+        await client.connect();
                 }
                 
-                db = client.db(DB_NAME);
-                
+        db = client.db(DB_NAME);
+        
                 // 验证连接（必须成功才能继续）
-                await db.admin().ping();
+        await db.admin().ping();
                 
                 if (isFirstConnection || attempt > 1) {
-                    console.log('✅ MongoDB 连接成功');
-                    console.log('   数据库:', DB_NAME);
+        console.log('✅ MongoDB 连接成功');
+        console.log('   数据库:', DB_NAME);
                     if (attempt > 1) {
                         console.log(`   重试 ${attempt - 1} 次后成功连接`);
                     }
                 }
                 
-                return db;
+        return db;
             } catch (connectError) {
                 lastError = connectError;
                 if (isFirstConnection || attempt === 1) {
@@ -135,8 +132,8 @@ async function connectDB() {
         // 只在首次连接失败时输出详细错误，避免重复日志
         const isFirstConnection = !client || !db;
         if (isFirstConnection) {
-            console.error('❌ MongoDB 连接失败:');
-            console.error('   错误消息:', error.message);
+        console.error('❌ MongoDB 连接失败:');
+        console.error('   错误消息:', error.message);
             console.error('   错误代码:', error.code || 'N/A');
             if (error.name) {
                 console.error('   错误类型:', error.name);
@@ -180,7 +177,7 @@ async function connectDB() {
             // 只在开发环境输出完整堆栈
             if (process.env.NODE_ENV !== 'production' && error.stack) {
                 console.error('\n   错误堆栈:', error.stack);
-            }
+        }
         } else {
             // 非首次连接失败，只输出简要信息
             console.warn('⚠️ MongoDB 重连失败:', error.message);

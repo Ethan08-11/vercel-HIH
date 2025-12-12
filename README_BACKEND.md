@@ -131,6 +131,80 @@ npm run dev
 }
 ```
 
+## MongoDB 数据库连接
+
+### ⚠️ 重要说明
+
+**本地开发环境**：
+- Zeabur 的 MongoDB 通常只允许从 Zeabur 内部网络访问
+- 本地计算机**无法直接连接**到 Zeabur 的 MongoDB（这是安全设置）
+- 如果连接失败，应用会**自动降级**到本地文件系统存储，**不影响正常使用**
+
+**Zeabur 生产环境**：
+- 在 Zeabur 上部署时，应用可以正常连接到 MongoDB
+- 数据会保存到 MongoDB 数据库
+
+### 配置 MongoDB 连接
+
+#### 1. 在 Zeabur 中配置（生产环境）
+
+1. 进入 Zeabur 控制台
+2. 选择项目 `questionnaire-app`
+3. 选择服务 `questionnaire-backend`
+4. 点击 "环境变量" (Environment Variables)
+5. 添加环境变量：
+   - **变量名**: `MONGODB_URI`
+   - **变量值**: `mongodb://mongo:密码@sjc1.clusters.zeabur.com:28174/questionnaire?authSource=admin`
+   - **变量名**: `DB_NAME`
+   - **变量值**: `questionnaire`
+
+#### 2. 本地开发环境配置（可选）
+
+如果你想在本地测试 MongoDB 连接（通常不会成功，但可以配置）：
+
+1. 在项目根目录创建 `.env` 文件
+2. 添加以下内容：
+   ```env
+   MONGODB_URI=mongodb://mongo:密码@sjc1.clusters.zeabur.com:28174/questionnaire?authSource=admin
+   DB_NAME=questionnaire
+   ```
+
+**注意**：
+- 本地连接通常会失败（连接超时），这是正常的
+- 应用会自动使用本地文件系统存储，不影响开发
+- 详细配置说明请参考 `配置MongoDB连接.md`
+
+### 连接失败时的处理
+
+如果看到以下错误信息：
+```
+MongoDB 连接失败: connection 2 to 170.106.146.155:28174 timed out
+```
+
+**这是正常的**，因为：
+1. Zeabur MongoDB 只允许内部网络访问
+2. 应用会自动降级到本地文件存储
+3. 所有功能仍然正常工作
+4. 数据会保存在 `data/` 目录
+
+**在 Zeabur 生产环境中**，连接会自动成功，数据会保存到 MongoDB。
+
+### 数据同步
+
+如果需要从 MongoDB 同步数据到本地：
+
+**方法 1：使用 API 导出（推荐，适用于本地无法连接的情况）**
+```bash
+npm run sync-api
+```
+
+**方法 2：直接连接 MongoDB（仅适用于可以连接的情况）**
+```bash
+npm run sync
+```
+
+详细说明请参考 `配置MongoDB连接.md`
+
 ## 数据存储
 
 所有提交的数据会保存在 `data/` 目录下，使用统一的命名格式：

@@ -1,5 +1,24 @@
 # 配置 MongoDB 连接字符串
 
+## 🎯 快速配置（当前服务器）
+
+**直接使用以下连接字符串**（已根据当前服务器信息配置）：
+
+```env
+MONGODB_URI=mongodb://mongo:bNv0OPw2C34V97GQMnYo18augx65Lldq@sjc1.clusters.zeabur.com:28174/questionnaire?authSource=admin
+DB_NAME=questionnaire
+```
+
+### 在 Zeabur 中配置
+
+1. 进入项目 `questionnaire-app`
+2. 选择服务 `questionnaire-backend`
+3. 点击 "环境变量" (Environment Variables)
+4. 添加环境变量：
+   - **变量名**: `MONGODB_URI`
+   - **变量值**: `mongodb://mongo:bNv0OPw2C34V97GQMnYo18augx65Lldq@sjc1.clusters.zeabur.com:28174/questionnaire?authSource=admin`
+5. 保存后，Zeabur 会自动重新部署
+
 ## 📋 从 Zeabur 获取连接信息
 
 在 Zeabur 的 MongoDB 服务页面，你会看到以下字段：
@@ -8,10 +27,17 @@
 
 这是完整的连接字符串，格式类似：
 ```
-mongodb://mongo:password@sjc1.clusters.zeabur.com:23654/questionnaire?authSource=admin
+mongodb://mongo:bNv0OPw2C34V97GQMnYo18augx65Lldq@sjc1.clusters.zeabur.com:28174/questionnaire?authSource=admin
 ```
 
 **直接复制这个字段的值即可！**
+
+**当前服务器信息**：
+- 主机: `sjc1.clusters.zeabur.com`
+- 端口: `28174`
+- 用户名: `mongo`
+- 密码: `bNv0OPw2C34V97GQMnYo18augx65Lldq`
+- 数据库: `questionnaire`
 
 ### ❌ 不要单独使用这些字段：
 - MongoDB username（只是用户名）
@@ -29,11 +55,11 @@ mongodb://mongo:password@sjc1.clusters.zeabur.com:23654/questionnaire?authSource
 
 3. **在 .env 文件中添加：**
    ```env
-   MONGODB_URI=mongodb://mongo:你的密码@sjc1.clusters.zeabur.com:23654/questionnaire?authSource=admin
+   MONGODB_URI=mongodb://mongo:bNv0OPw2C34V97GQMnYo18augx65Lldq@sjc1.clusters.zeabur.com:28174/questionnaire?authSource=admin
    DB_NAME=questionnaire
    ```
 
-   ⚠️ **注意**：将 `你的密码` 替换为实际的密码（从 "MongoDB password" 字段获取）
+   ⚠️ **注意**：这是当前服务器的实际连接字符串，可以直接使用
 
 4. **保存文件**
 
@@ -51,30 +77,30 @@ mongodb://mongo:password@sjc1.clusters.zeabur.com:23654/questionnaire?authSource
 mongodb://用户名:密码@主机:端口/数据库名?authSource=admin
 ```
 
-**示例：**
+**示例（当前服务器）：**
 ```env
-MONGODB_URI=mongodb://mongo:你的密码@sjc1.clusters.zeabur.com:23654/questionnaire?authSource=admin
+MONGODB_URI=mongodb://mongo:bNv0OPw2C34V97GQMnYo18augx65Lldq@sjc1.clusters.zeabur.com:28174/questionnaire?authSource=admin
 ```
 
 **字段对应关系：**
 - `mongo` - 从 "MongoDB username" 获取
-- `你的密码` - 从 "MongoDB password" 获取（点击眼睛图标显示）
+- `bNv0OPw2C34V97GQMnYo18augx65Lldq` - 从 "MongoDB password" 获取（点击眼睛图标显示）
 - `sjc1.clusters.zeabur.com` - 从 "MongoDB host" 获取
-- `23654` - 从 "MongoDB port" 获取
+- `28174` - 从 "MongoDB port" 获取
 - `questionnaire` - 数据库名称（通常是 `questionnaire`）
 
 ### 方法三：使用命令行（临时）
 
 Windows:
 ```cmd
-set MONGODB_URI=mongodb://mongo:密码@sjc1.clusters.zeabur.com:23654/questionnaire?authSource=admin
+set MONGODB_URI=mongodb://mongo:bNv0OPw2C34V97GQMnYo18augx65Lldq@sjc1.clusters.zeabur.com:28174/questionnaire?authSource=admin
 set DB_NAME=questionnaire
 node sync-data.js
 ```
 
 Linux/Mac:
 ```bash
-export MONGODB_URI="mongodb://mongo:密码@sjc1.clusters.zeabur.com:23654/questionnaire?authSource=admin"
+export MONGODB_URI="mongodb://mongo:bNv0OPw2C34V97GQMnYo18augx65Lldq@sjc1.clusters.zeabur.com:28174/questionnaire?authSource=admin"
 export DB_NAME=questionnaire
 node sync-data.js
 ```
@@ -103,7 +129,7 @@ MONGODB_URI=sjc1.clusters.zeabur.com
 
 ✅ 正确：
 ```env
-MONGODB_URI=mongodb://mongo:password@sjc1.clusters.zeabur.com:23654/questionnaire?authSource=admin
+MONGODB_URI=mongodb://mongo:bNv0OPw2C34V97GQMnYo18augx65Lldq@sjc1.clusters.zeabur.com:28174/questionnaire?authSource=admin
 ```
 
 ### 错误 2：密码包含特殊字符未转义
@@ -118,20 +144,20 @@ MONGODB_URI=mongodb://mongo:password@sjc1.clusters.zeabur.com:23654/questionnair
 
 ## 📝 完整示例
 
-假设你的信息是：
+**当前服务器信息**：
 - Username: `mongo`
-- Password: `abc123@xyz`
+- Password: `bNv0OPw2C34V97GQMnYo18augx65Lldq`
 - Host: `sjc1.clusters.zeabur.com`
-- Port: `23654`
+- Port: `28174`
 - Database: `questionnaire`
 
 那么 `.env` 文件应该是：
 ```env
-MONGODB_URI=mongodb://mongo:abc123%40xyz@sjc1.clusters.zeabur.com:23654/questionnaire?authSource=admin
+MONGODB_URI=mongodb://mongo:bNv0OPw2C34V97GQMnYo18augx65Lldq@sjc1.clusters.zeabur.com:28174/questionnaire?authSource=admin
 DB_NAME=questionnaire
 ```
 
-注意：密码中的 `@` 被编码为 `%40`
+**注意**：当前密码不包含需要 URL 编码的特殊字符，可以直接使用
 
 ## 🚀 测试连接
 
