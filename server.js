@@ -995,17 +995,24 @@ function startServerFast() {
             
             // 在Zeabur上，启动定期心跳日志，确保日志系统能看到应用在运行
             if (isZeabur) {
-                // 每30秒输出一次心跳日志
-                const heartbeatInterval = setInterval(() => {
+                // 立即输出第一条心跳日志（确保 Zeabur 能看到应用已启动）
+                const outputHeartbeat = () => {
                     const uptime = Math.floor(process.uptime());
                     const memUsage = process.memoryUsage();
-                    console.log(`💓 [心跳] 服务器运行中 - 运行时间: ${uptime}秒, 内存: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB / ${Math.round(memUsage.heapTotal / 1024 / 1024)}MB`);
-                    
-                    // 确保日志被刷新
+                    const msg = `💓 [心跳] 服务器运行中 - 运行时间: ${uptime}秒, 内存: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB / ${Math.round(memUsage.heapTotal / 1024 / 1024)}MB`;
+                    process.stdout.write(msg + '\n');
                     if (process.stdout && typeof process.stdout.flush === 'function') {
-                        process.stdout.flush();
+                        try {
+                            process.stdout.flush();
+                        } catch (e) {}
                     }
-                }, 30000); // 30秒
+                };
+                
+                // 立即输出第一条心跳
+                setTimeout(outputHeartbeat, 1000);
+                
+                // 每30秒输出一次心跳日志
+                const heartbeatInterval = setInterval(outputHeartbeat, 30000); // 30秒
                 
                 // 在服务器关闭时清除定时器
                 serverInstance.on('close', () => {
@@ -1097,20 +1104,42 @@ module.exports = app;
 
 // 立即输出启动信息（在模块加载时）
 // 使用 process.stdout.write 确保立即输出，不被缓冲
-process.stdout.write('='.repeat(60) + '\n');
-process.stdout.write('🚀 应用开始启动...\n');
-process.stdout.write('   时间: ' + new Date().toISOString() + '\n');
-process.stdout.write('   Node版本: ' + process.version + '\n');
-process.stdout.write('   工作目录: ' + __dirname + '\n');
-process.stdout.write('='.repeat(60) + '\n');
-
-// 强制刷新输出
-if (process.stdout && typeof process.stdout.flush === 'function') {
-    process.stdout.flush();
-} else {
-    // 如果 flush 不可用，使用 setTimeout 确保输出
-    setTimeout(() => {}, 0);
-}
+// 这对于 Zeabur 日志系统非常重要
+(function() {
+    const timestamp = new Date().toISOString();
+    const lines = [
+        '='.repeat(60),
+        '🚀 应用开始启动...',
+        '   时间: ' + timestamp,
+        '   Node版本: ' + process.version,
+        '   工作目录: ' + __dirname,
+        '   进程ID: ' + process.pid,
+        '='.repeat(60)
+    ];
+    
+    lines.forEach(line => {
+        process.stdout.write(line + '\n');
+    });
+    
+    // 强制刷新输出（多次尝试确保输出）
+    if (process.stdout && typeof process.stdout.flush === 'function') {
+        try {
+            process.stdout.flush();
+        } catch (e) {
+            // 忽略 flush 错误
+        }
+    }
+    
+    // 使用 setImmediate 确保输出被处理
+    setImmediate(() => {
+        process.stdout.write('📋 模块加载完成，准备初始化服务器...\n');
+        if (process.stdout && typeof process.stdout.flush === 'function') {
+            try {
+                process.stdout.flush();
+            } catch (e) {}
+        }
+    });
+})();
 
 // 本地开发时启动服务器
 if (require.main === module) {
@@ -1134,44 +1163,58 @@ if (require.main === module) {
             console.log('\n✅ 服务器初始化完成！');
             console.log('   服务器已就绪，等待请求...');
         } catch (error) {
-            console.error('\n' + '='.repeat(60));
-            console.error('❌ 服务器启动失败:');
-            console.error('='.repeat(60));
-            console.error('   错误类型:', error.constructor.name);
-            console.error('   错误消息:', error.message);
+            // 使用 stderr 输出错误，确保能被 Zeabur 捕获
+            const outputError = (msg) => {
+                process.stderr.write(msg + '\n');
+                if (process.stderr && typeof process.stderr.flush === 'function') {
+                    try {
+                        process.stderr.flush();
+                    } catch (e) {}
+                }
+            };
+            
+            outputError('\n' + '='.repeat(60));
+            outputError('❌ 服务器启动失败:');
+            outputError('='.repeat(60));
+            outputError('   错误类型: ' + error.constructor.name);
+            outputError('   错误消息: ' + error.message);
             if (error.code) {
-                console.error('   错误代码:', error.code);
+                outputError('   错误代码: ' + error.code);
             }
             if (error.syscall) {
-                console.error('   系统调用:', error.syscall);
+                outputError('   系统调用: ' + error.syscall);
             }
             if (error.address) {
-                console.error('   地址:', error.address);
+                outputError('   地址: ' + error.address);
             }
             if (error.port) {
-                console.error('   端口:', error.port);
+                outputError('   端口: ' + error.port);
             }
             if (error.stack) {
-                console.error('\n   错误堆栈:');
-                console.error(error.stack);
+                outputError('\n   错误堆栈:');
+                outputError(error.stack);
             }
-            console.error('='.repeat(60));
+            outputError('='.repeat(60));
             
             // 在 Zeabur 上，即使启动失败也要等待一段时间，让日志输出
             const isZeabur = isZeaburEnvironment();
-            const waitTime = isZeabur ? 10000 : 2000; // Zeabur上等待10秒确保日志输出
-            console.error(`\n⏳ ${waitTime/1000}秒后退出...`);
+            const waitTime = isZeabur ? 15000 : 2000; // Zeabur上等待15秒确保日志输出
+            outputError('\n⏳ ' + (waitTime/1000) + '秒后退出...');
             
             // 确保错误信息被刷新
             if (process.stdout && typeof process.stdout.flush === 'function') {
-                process.stdout.flush();
+                try {
+                    process.stdout.flush();
+                } catch (e) {}
             }
             if (process.stderr && typeof process.stderr.flush === 'function') {
-                process.stderr.flush();
+                try {
+                    process.stderr.flush();
+                } catch (e) {}
             }
             
             setTimeout(() => {
-                console.error('💀 进程退出');
+                outputError('💀 进程退出');
                 process.exit(1);
             }, waitTime);
         }
