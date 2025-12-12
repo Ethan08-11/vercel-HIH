@@ -1,15 +1,70 @@
+// 立即输出日志（在任何其他代码之前）
+// 这是为了确保 Zeabur 能看到日志输出
+try {
+    process.stdout.write('\n');
+    process.stdout.write('='.repeat(70) + '\n');
+    process.stdout.write('🚀 SERVER.JS 文件开始加载\n');
+    process.stdout.write('='.repeat(70) + '\n');
+    process.stdout.write(`⏰ 加载时间: ${new Date().toISOString()}\n`);
+    process.stdout.write(`📦 Node版本: ${process.version}\n`);
+    process.stdout.write(`🆔 进程ID: ${process.pid}\n`);
+    if (process.stdout && typeof process.stdout.flush === 'function') {
+        process.stdout.flush();
+    }
+} catch (e) {
+    // 如果输出失败，至少尝试 console.log
+    console.log('SERVER.JS 文件开始加载');
+}
+
 // 加载环境变量（本地开发）
 if (require.main === module) {
+    try {
+        process.stdout.write('📋 加载环境变量 (dotenv)...\n');
+        if (process.stdout && typeof process.stdout.flush === 'function') {
+            process.stdout.flush();
+        }
+    } catch (e) {}
     require('dotenv').config();
 }
 
+// 输出模块加载日志
+try {
+    process.stdout.write('📦 开始加载 Node.js 模块...\n');
+    if (process.stdout && typeof process.stdout.flush === 'function') {
+        process.stdout.flush();
+    }
+} catch (e) {}
+
 const express = require('express');
+try {
+    process.stdout.write('✅ Express 模块已加载\n');
+    if (process.stdout && typeof process.stdout.flush === 'function') {
+        process.stdout.flush();
+    }
+} catch (e) {}
+
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const compression = require('compression');
+
+try {
+    process.stdout.write('✅ 基础模块已加载，正在加载数据库模块...\n');
+    if (process.stdout && typeof process.stdout.flush === 'function') {
+        process.stdout.flush();
+    }
+} catch (e) {}
+
 const db = require('./db');
+
+try {
+    process.stdout.write('✅ 所有模块加载完成\n');
+    process.stdout.write('='.repeat(70) + '\n');
+    if (process.stdout && typeof process.stdout.flush === 'function') {
+        process.stdout.flush();
+    }
+} catch (e) {}
 
 // 生成基于产品ID的随机初始值（1500-2500之间）
 // 使用产品ID作为种子，确保每个产品的初始值是固定的
@@ -1248,14 +1303,32 @@ module.exports = app;
 
 // 本地开发时启动服务器
 if (require.main === module) {
+    // 立即输出启动信息
+    try {
+        process.stdout.write('\n');
+        process.stdout.write('='.repeat(70) + '\n');
+        process.stdout.write('🚀 检测到主模块执行，开始启动服务器\n');
+        process.stdout.write('='.repeat(70) + '\n');
+        process.stdout.write(`⏰ 启动时间: ${new Date().toISOString()}\n`);
+        process.stdout.write(`📁 工作目录: ${__dirname}\n`);
+        process.stdout.write(`🆔 进程ID: ${process.pid}\n`);
+        process.stdout.write(`🌍 平台: ${process.platform}\n`);
+        process.stdout.write(`💻 架构: ${process.arch}\n`);
+        if (process.stdout && typeof process.stdout.flush === 'function') {
+            process.stdout.flush();
+        }
+    } catch (e) {
+        console.log('开始启动服务器');
+    }
+    
     // 使用 try-catch 包装，确保所有错误都被捕获
     (async () => {
         try {
             // 使用 process.stdout.write 确保立即输出
             process.stdout.write('\n');
-            process.stdout.write('='.repeat(60) + '\n');
+            process.stdout.write('='.repeat(70) + '\n');
             process.stdout.write('📋 服务器启动流程开始\n');
-            process.stdout.write('='.repeat(60) + '\n');
+            process.stdout.write('='.repeat(70) + '\n');
             process.stdout.write(`   进程ID: ${process.pid}\n`);
             process.stdout.write(`   平台: ${process.platform}\n`);
             process.stdout.write(`   架构: ${process.arch}\n`);
