@@ -1617,20 +1617,22 @@ function preloadImage(index) {
             img.style.setProperty('max-height', '100%', 'important');
             
             // 如果图片已经在缓存中（complete），立即标记为已加载
-            if (img.complete && img.naturalWidth > 0) {
+            if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
                 img.dataset.loaded = 'true';
                 img.style.opacity = '1';
+                img.style.visibility = 'visible';
                 img.style.transition = 'none'; // 移除过渡，立即显示
             } else {
                 // 图片还在加载，立即添加load事件监听
                 const onLoad = () => {
                     img.dataset.loaded = 'true';
                     img.style.opacity = '1';
+                    img.style.visibility = 'visible';
                     img.style.transition = 'none'; // 移除过渡，立即显示
                     img.removeEventListener('load', onLoad);
                 };
                 // 如果图片已经加载完成但事件还没触发，立即调用
-                if (img.complete && img.naturalWidth > 0) {
+                if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
                     onLoad();
                 } else {
                     img.addEventListener('load', onLoad, { once: true });
@@ -1675,9 +1677,10 @@ function preloadImage(index) {
                     img.style.setProperty('transform', 'translate(-50%, -50%) translateZ(0)', 'important');
                     img.style.setProperty('-webkit-transform', 'translate(-50%, -50%) translateZ(0)', 'important');
                     // 如果图片已经在缓存中，标记为已加载
-                    if (img.complete && img.naturalWidth > 0) {
+                    if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
                         img.dataset.loaded = 'true';
                         img.style.opacity = '1';
+                        img.style.visibility = 'visible';
                         img.style.transition = 'none'; // 移除过渡，立即显示
                     }
                 }
@@ -2093,7 +2096,7 @@ async function showProduct(index) {
     const isMobile = isMobileDevice();
     let imageReady = isImageLoaded(index);
     
-    // 统一处理：快速检查并加载，不阻塞切换（移动端和电脑端相同逻辑）
+    // 统一处理：快速检查并加载，移动端确保图片已准备好再切换
     if (!imageReady && targetImg) {
         // 检查是否已预加载
         const isPreloaded = targetImg.dataset.preloaded === 'true';
@@ -2112,36 +2115,145 @@ async function showProduct(index) {
                     // 图片已在缓存中，立即显示
                     targetImg.dataset.loaded = 'true';
                     targetImg.style.opacity = '1';
+                    targetImg.style.visibility = 'visible';
                     targetImg.style.transition = 'none';
                     if (loadingPlaceholder) {
                         loadingPlaceholder.style.display = 'none';
                     }
                     imageReady = true;
                 } else {
-                    // 图片正在加载，添加load事件监听（不等待，异步处理）
-                    const onLoad = () => {
-                        targetImg.dataset.loaded = 'true';
-                        targetImg.style.opacity = '1';
-                        targetImg.style.transition = 'none';
-                        if (loadingPlaceholder) {
-                            loadingPlaceholder.style.display = 'none';
-                        }
-                        targetImg.removeEventListener('load', onLoad);
-                    };
-                    
-                    // 如果图片已经加载完成但事件还没触发，立即调用
-                    if (targetImg.complete && targetImg.naturalWidth > 0) {
-                        onLoad();
+                    // 图片正在加载，移动端短暂等待确保图片准备好
+                    if (isMobile) {
+                        // 移动端：等待图片加载完成（最多等待200ms，避免卡顿）
+                        await new Promise(resolve => {
+                            let resolved = false;
+                            const maxWait = 200; // 最多等待200ms
+                            const startTime = Date.now();
+                            
+                            const checkAndResolve = () => {
+                                if (resolved) return;
+                                if (targetImg.complete && targetImg.naturalWidth > 0 && targetImg.naturalHeight > 0) {
+                                    resolved = true;
+                                    targetImg.dataset.loaded = 'true';
+                                    targetImg.style.opacity = '1';
+                                    targetImg.style.visibility = 'visible';
+                                    targetImg.style.transition = 'none';
+                                    if (loadingPlaceholder) {
+                                        loadingPlaceholder.style.display = 'none';
+                                    }
+                                    resolve();
+                                } else if (Date.now() - startTime > maxWait) {
+                                    resolved = true;
+                                    resolve(); // 超时后继续，不阻塞
+                                }
+                            };
+                            
+                            // 立即检查一次
+                            checkAndResolve();
+                            if (resolved) return;
+                            
+                            // 添加load事件监听
+                            const onLoad = () => {
+                                if (resolved) return;
+                                resolved = true;
+                                targetImg.dataset.loaded = 'true';
+                                targetImg.style.opacity = '1';
+                                targetImg.style.visibility = 'visible';
+                                targetImg.style.transition = 'none';
+                                if (loadingPlaceholder) {
+                                    loadingPlaceholder.style.display = 'none';
+                                }
+                                targetImg.removeEventListener('load', onLoad);
+                                targetImg.removeEventListener('error', onError);
+                                resolve();
+                            };
+                            
+                            const onError = () => {
+                                if (resolved) return;
+                                resolved = true;
+                                targetImg.removeEventListener('load', onLoad);
+                                targetImg.removeEventListener('error', onError);
+                                resolve();
+                            };
+                            
+                            // 如果图片已经加载完成但事件还没触发
+                            if (targetImg.complete && targetImg.naturalWidth > 0) {
+                                onLoad();
+                                return;
+                            }
+                            
+                            targetImg.addEventListener('load', onLoad, { once: true });
+                            targetImg.addEventListener('error', onError, { once: true });
+                            
+                            // 轮询检查（每20ms检查一次）
+                            const checkInterval = setInterval(() => {
+                                checkAndResolve();
+                                if (resolved) {
+                                    clearInterval(checkInterval);
+                                }
+                            }, 20);
+                            
+                            setTimeout(() => {
+                                clearInterval(checkInterval);
+                                if (!resolved) {
+                                    resolved = true;
+                                    resolve();
+                                }
+                            }, maxWait);
+                        });
+                        imageReady = isImageLoaded(index);
                     } else {
-                        targetImg.addEventListener('load', onLoad, { once: true });
+                        // 桌面端：异步处理，不等待
+                        const onLoad = () => {
+                            targetImg.dataset.loaded = 'true';
+                            targetImg.style.opacity = '1';
+                            targetImg.style.transition = 'none';
+                            if (loadingPlaceholder) {
+                                loadingPlaceholder.style.display = 'none';
+                            }
+                            targetImg.removeEventListener('load', onLoad);
+                        };
+                        
+                        if (targetImg.complete && targetImg.naturalWidth > 0) {
+                            onLoad();
+                        } else {
+                            targetImg.addEventListener('load', onLoad, { once: true });
+                        }
                     }
                 }
             }
         } else {
-            // 未预加载，立即开始加载图片（不阻塞切换，异步处理）
-            loadImage(index).catch(err => {
-                console.error(`加载图片 ${index} 失败:`, err);
-            });
+            // 未预加载，立即开始加载图片
+            if (isMobile) {
+                // 移动端：等待图片加载完成（最多等待300ms）
+                try {
+                    await loadImage(index);
+                    // 短暂等待确保图片已渲染
+                    await new Promise(resolve => {
+                        const maxWait = 100;
+                        const startTime = Date.now();
+                        const checkInterval = setInterval(() => {
+                            if ((targetImg.complete && targetImg.naturalWidth > 0 && targetImg.naturalHeight > 0) || 
+                                Date.now() - startTime > maxWait) {
+                                clearInterval(checkInterval);
+                                resolve();
+                            }
+                        }, 20);
+                        setTimeout(() => {
+                            clearInterval(checkInterval);
+                            resolve();
+                        }, maxWait);
+                    });
+                    imageReady = isImageLoaded(index);
+                } catch (error) {
+                    console.error(`加载图片 ${index} 失败:`, error);
+                }
+            } else {
+                // 桌面端：异步处理，不阻塞
+                loadImage(index).catch(err => {
+                    console.error(`加载图片 ${index} 失败:`, err);
+                });
+            }
         }
     }
     
@@ -2191,13 +2303,35 @@ async function showProduct(index) {
         }
     }
     
-    // 更新当前索引（移动端和电脑端统一逻辑，不等待）
+    // 更新当前索引
     currentIndex = index;
+    
+    // 移动端：确保图片已渲染后再切换，避免短暂空白
+    if (isMobile && targetImg) {
+        // 使用requestAnimationFrame确保图片已渲染
+        await new Promise(resolve => {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    // 确保图片已加载并可见
+                    if (targetImg.complete && targetImg.naturalWidth > 0 && targetImg.naturalHeight > 0) {
+                        targetImg.dataset.loaded = 'true';
+                        targetImg.style.opacity = '1';
+                        targetImg.style.visibility = 'visible';
+                        targetImg.style.transition = 'none';
+                        if (loadingPlaceholder) {
+                            loadingPlaceholder.style.display = 'none';
+                        }
+                    }
+                    resolve();
+                });
+            });
+        });
+    }
     
     // 计算并应用transform，确保只显示当前产品
     // 使用容器宽度来计算，确保精确移动
     const translateX = -index * containerWidth;
-    // 立即应用变换，不等待 requestAnimationFrame，减少延迟
+    // 立即应用变换
     carouselWrapper.style.transform = `translateX(${translateX}px)`;
     carouselWrapper.style.willChange = 'transform';
     // 强制重新计算布局（同步执行，确保立即生效）
