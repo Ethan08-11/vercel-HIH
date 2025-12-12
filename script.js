@@ -1236,10 +1236,30 @@ async function updateHeartCount(productIndex, increment) {
                     console.log(`✅ 产品 ${productId} 更新成功（使用本地值）`);
                     return;
                 } else {
+                    // 检查是否是数据库连接失败的情况
+                    if (result.databaseAvailable === false || result.localOnly === true) {
+                        // 数据库不可用，但这是预期的，不抛出错误
+                        console.warn(`⚠️ 产品 ${productId} 数据仅本地有效:`, result.message);
+                        return; // 直接返回，不重试
+                    }
                     throw new Error(result.message || '服务器返回失败');
                 }
             } catch (error) {
                 retryCount++;
+                // 检查是否是数据库连接失败（这种情况不需要重试）
+                const isDatabaseError = error.message && (
+                    error.message.includes('数据库连接失败') || 
+                    error.message.includes('数据库未配置') ||
+                    error.message.includes('503')
+                );
+                
+                if (isDatabaseError) {
+                    // 数据库连接失败，不重试，直接使用本地值
+                    console.warn(`⚠️ 数据库连接失败，数据仅本地有效 (尝试 ${retryCount}/${maxRetries}):`, error.message);
+                    console.warn('   数据已更新到本地，但无法保存到服务器');
+                    return; // 直接返回，不继续重试
+                }
+                
                 console.error(`更新爱心数量到服务器失败 (尝试 ${retryCount}/${maxRetries}):`, error);
                 
                 if (retryCount < maxRetries) {
@@ -1247,8 +1267,8 @@ async function updateHeartCount(productIndex, increment) {
                     await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
                 } else {
                     // 所有重试都失败，保持本地更新
-                    console.error('❌ 所有重试都失败，数据未保存到服务器。本地数量:', localCountBeforeUpdate);
-                    // 可以在这里添加错误提示或本地存储作为备份
+                    console.warn('⚠️ 所有重试都失败，数据仅本地有效。本地数量:', localCountBeforeUpdate);
+                    console.warn('   数据已更新到本地，但无法保存到服务器');
                 }
             }
         }
@@ -1318,10 +1338,12 @@ async function loadHeartCountsFromServer() {
             console.log('✅ 爱心数量已从服务器加载:', result.heartCounts);
             console.log('本地heartCounts:', heartCounts);
         } else {
-            console.warn('❌ 服务器返回的数据格式不正确:', result);
-            // 如果服务器返回失败，但包含heartCounts字段，尝试使用它
+            // 即使success为false，如果包含heartCounts字段，也尝试使用
             if (result.heartCounts && typeof result.heartCounts === 'object') {
-                console.log('⚠️ 尝试使用服务器返回的heartCounts（即使success为false）');
+                console.log('⚠️ 服务器返回success:false，但包含heartCounts数据，使用该数据');
+                if (result.message) {
+                    console.log('   提示:', result.message);
+                }
                 productImages.forEach((item, index) => {
                     const productId = item.id;
                     if (result.heartCounts[productId] !== undefined) {
@@ -1336,7 +1358,11 @@ async function loadHeartCountsFromServer() {
                     }
                 });
             } else {
-                // 如果服务器返回失败，保持现有数据，不重置
+                // 如果服务器返回失败且没有heartCounts，保持现有数据，不重置
+                console.warn('⚠️ 服务器返回失败且无heartCounts数据，保持现有数据');
+                if (result.message) {
+                    console.warn('   服务器消息:', result.message);
+                }
                 // 只有在heartCounts完全为空时才设置随机初始值
                 productImages.forEach((item, index) => {
                     if (heartCounts[index] === undefined) {

@@ -531,17 +531,18 @@ app.get('/api/heart-counts', async (req, res) => {
             const dbConnection = await db.connectDB();
             
             if (!dbConnection) {
-                console.error('❌ 数据库连接失败，返回默认值');
-                // 连接失败时返回默认值，但不重置
+                console.warn('⚠️ 数据库连接失败，返回默认值（应用仍可正常使用）');
+                // 连接失败时返回默认值，但返回success:true，让前端能正常使用
                 const allProductIds = Array.from({ length: 63 }, (_, i) => i + 1);
                 const defaultCounts = {};
                 allProductIds.forEach(productId => {
                     defaultCounts[productId] = getRandomInitialCount(productId);
                 });
                 return res.json({
-                    success: false,
+                    success: true, // 改为true，让前端能正常使用
                     heartCounts: defaultCounts,
-                    message: '数据库连接失败，返回默认值'
+                    message: '数据库连接失败，返回默认值（数据仅本地有效）',
+                    databaseAvailable: false // 标记数据库不可用
                 });
             }
             
@@ -623,11 +624,14 @@ app.post('/api/heart-count', async (req, res) => {
             const dbConnection = await db.connectDB();
             
             if (!dbConnection) {
-                console.error('❌ 数据库连接失败');
-                return res.status(503).json({
+                console.warn('⚠️ 数据库连接失败，无法保存数据（但允许本地操作）');
+                // 返回200而不是503，避免前端报错，但提示无法保存到服务器
+                return res.json({
                     success: false,
-                    message: '数据库连接失败，无法保存数据',
-                    productId: parseInt(productId)
+                    message: '数据库连接失败，数据仅本地有效，无法保存到服务器',
+                    productId: parseInt(productId),
+                    databaseAvailable: false, // 标记数据库不可用
+                    localOnly: true // 标记为仅本地操作
                 });
             }
             
@@ -690,11 +694,13 @@ app.post('/api/heart-count', async (req, res) => {
             }
         }
         
-        // 如果没有数据库，返回错误提示
-        res.status(503).json({
+        // 如果没有数据库，返回提示（但不返回503，避免前端报错）
+        res.json({
             success: false,
             productId: parseInt(productId),
-            message: '数据库未配置，无法保存数据。请配置 MONGODB_URI 环境变量。'
+            message: '数据库未配置，数据仅本地有效。请配置 MONGODB_URI 环境变量以启用服务器保存。',
+            databaseAvailable: false,
+            localOnly: true
         });
     } catch (error) {
         console.error('更新爱心数量时出错:', error);
