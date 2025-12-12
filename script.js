@@ -474,6 +474,159 @@ const MAX_CONCURRENT_LOADS = isMobileDevice() ? 3 : 4; // 移动端最多3个并
 let clickTimers = {}; // 点击防抖定时器 { productIndex: timer }
 const CLICK_DEBOUNCE_DELAY = 500; // 点击防抖延迟（毫秒），防止快速点击
 
+// 移动端图片缓存系统 - 彻底解决白屏闪烁问题
+const imageCache = new Map(); // 内存缓存：存储已加载的Image对象 { url: Image }
+const imageCacheStatus = new Map(); // 缓存状态：{ url: 'loading' | 'loaded' | 'error' }
+let cacheInitialized = false; // 缓存是否已初始化
+
+// 初始化移动端图片缓存（提前加载并缓存图片）
+async function initializeImageCache() {
+    const isMobile = isMobileDevice();
+    if (!isMobile || cacheInitialized) return;
+    
+    console.log('📦 开始初始化移动端图片缓存...');
+    cacheInitialized = true;
+    
+    // 优先预加载前10张图片（确保切换流畅）
+    const preloadCount = Math.min(10, productImages.length);
+    const preloadPromises = [];
+    
+    for (let i = 0; i < preloadCount; i++) {
+        const item = productImages[i];
+        const imageUrl = getImageUrl(item);
+        
+        // 如果已经缓存，跳过
+        if (imageCache.has(imageUrl) && imageCacheStatus.get(imageUrl) === 'loaded') {
+            continue;
+        }
+        
+        // 创建预加载Promise
+        const preloadPromise = new Promise((resolve) => {
+            const img = new Image();
+            imageCacheStatus.set(imageUrl, 'loading');
+            
+            img.onload = function() {
+                imageCache.set(imageUrl, img);
+                imageCacheStatus.set(imageUrl, 'loaded');
+                console.log(`✅ 图片 ${i + 1} 已缓存: ${imageUrl}`);
+                resolve(img);
+            };
+            
+            img.onerror = function() {
+                // 如果WebP失败，尝试JPG
+                if (imageUrl.includes('.webp')) {
+                    const fallbackUrl = getImageUrl({ ...item, image: item.fallback || item.image.replace('.webp', '.jpg') });
+                    const fallbackImg = new Image();
+                    fallbackImg.onload = function() {
+                        imageCache.set(fallbackUrl, fallbackImg);
+                        imageCacheStatus.set(fallbackUrl, 'loaded');
+                        imageCacheStatus.set(imageUrl, 'loaded'); // 标记原URL也为已加载
+                        console.log(`✅ 图片 ${i + 1} 已缓存（JPG回退）: ${fallbackUrl}`);
+                        resolve(fallbackImg);
+                    };
+                    fallbackImg.onerror = function() {
+                        imageCacheStatus.set(imageUrl, 'error');
+                        console.warn(`⚠️ 图片 ${i + 1} 缓存失败: ${imageUrl}`);
+                        resolve(null);
+                    };
+                    fallbackImg.src = fallbackUrl;
+                } else {
+                    imageCacheStatus.set(imageUrl, 'error');
+                    console.warn(`⚠️ 图片 ${i + 1} 缓存失败: ${imageUrl}`);
+                    resolve(null);
+                }
+            };
+            
+            img.src = imageUrl;
+        });
+        
+        preloadPromises.push(preloadPromise);
+        
+        // 错开时间，避免同时发起太多请求
+        if (i > 0 && i % 3 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+    }
+    
+    // 等待前10张图片预加载完成
+    await Promise.all(preloadPromises);
+    console.log(`📦 移动端图片缓存初始化完成，已缓存 ${imageCache.size} 张图片`);
+    
+    // 后台继续预加载剩余图片
+    setTimeout(() => {
+        preloadRemainingImages();
+    }, 500);
+}
+
+// 后台预加载剩余图片
+async function preloadRemainingImages() {
+    const isMobile = isMobileDevice();
+    if (!isMobile) return;
+    
+    for (let i = 10; i < productImages.length; i++) {
+        const item = productImages[i];
+        const imageUrl = getImageUrl(item);
+        
+        // 如果已经缓存，跳过
+        if (imageCache.has(imageUrl) && imageCacheStatus.get(imageUrl) === 'loaded') {
+            continue;
+        }
+        
+        // 如果正在加载，跳过
+        if (imageCacheStatus.get(imageUrl) === 'loading') {
+            continue;
+        }
+        
+        // 创建预加载
+        const img = new Image();
+        imageCacheStatus.set(imageUrl, 'loading');
+        
+        img.onload = function() {
+            imageCache.set(imageUrl, img);
+            imageCacheStatus.set(imageUrl, 'loaded');
+        };
+        
+        img.onerror = function() {
+            // 如果WebP失败，尝试JPG
+            if (imageUrl.includes('.webp')) {
+                const fallbackUrl = getImageUrl({ ...item, image: item.fallback || item.image.replace('.webp', '.jpg') });
+                const fallbackImg = new Image();
+                fallbackImg.onload = function() {
+                    imageCache.set(fallbackUrl, fallbackImg);
+                    imageCacheStatus.set(fallbackUrl, 'loaded');
+                    imageCacheStatus.set(imageUrl, 'loaded');
+                };
+                fallbackImg.onerror = function() {
+                    imageCacheStatus.set(imageUrl, 'error');
+                };
+                fallbackImg.src = fallbackUrl;
+            } else {
+                imageCacheStatus.set(imageUrl, 'error');
+            }
+        };
+        
+        img.src = imageUrl;
+        
+        // 每3张图片暂停一下，避免网络拥塞
+        if ((i - 10) % 3 === 0 && i > 10) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+    }
+}
+
+// 从缓存获取图片（移动端优先使用缓存）
+function getCachedImage(url) {
+    const isMobile = isMobileDevice();
+    if (!isMobile) return null;
+    
+    // 检查内存缓存
+    if (imageCache.has(url) && imageCacheStatus.get(url) === 'loaded') {
+        return imageCache.get(url);
+    }
+    
+    return null;
+}
+
 // 初始化问卷
 async function initQuestionnaire() {
     const carouselWrapper = document.getElementById('carouselWrapper');
@@ -484,6 +637,15 @@ async function initQuestionnaire() {
         carouselWrapper.innerHTML = '';
         // 重置全局状态
         currentIndex = undefined;
+    }
+    
+    // 移动端：初始化图片缓存（提前加载并缓存图片）
+    const isMobile = isMobileDevice();
+    if (isMobile) {
+        // 异步初始化缓存，不阻塞主流程
+        initializeImageCache().catch(err => {
+            console.error('图片缓存初始化失败:', err);
+        });
     }
     
     // 先尝试从服务器加载爱心数量（如果失败，使用默认值）
@@ -1501,7 +1663,7 @@ let activePreloads = 0;
 // 动态计算预加载并发数：移动端8个，桌面端8个（更激进的预加载策略，确保图片提前准备好）
 const MAX_PRELOAD_CONCURRENT = isMobileDevice() ? 8 : 8;
 
-// 预加载图片（静默加载，不显示占位符，增强错误处理）
+// 预加载图片（静默加载，不显示占位符，增强错误处理，移动端优先使用缓存）
 function preloadImage(index) {
     if (index < 0 || index >= productImages.length) return;
     
@@ -1552,9 +1714,49 @@ function preloadImage(index) {
     }
     
     // 在data属性中保存URL，供后续加载使用
-        img.dataset.src = imageUrl;
+    img.dataset.src = imageUrl;
     if (fallbackUrl) {
         img.dataset.fallback = fallbackUrl;
+    }
+    
+    // 移动端：优先从缓存获取图片
+    if (isMobile) {
+        const cachedImg = getCachedImage(imageUrl);
+        if (cachedImg && cachedImg.complete && cachedImg.naturalWidth > 0) {
+            // 缓存中有图片，直接使用
+            img.dataset.preloaded = 'true';
+            img.dataset.preloading = 'false';
+            img.dataset.preloadSrc = cachedImg.src;
+            img.src = cachedImg.src;
+            img.dataset.loaded = 'true';
+            img.style.opacity = '1';
+            img.style.visibility = 'visible';
+            img.style.transition = 'none';
+            activePreloads--;
+            processPreloadQueue();
+            console.log(`✅ 图片 ${index + 1} 使用缓存: ${imageUrl}`);
+            return;
+        }
+        
+        // 如果fallback在缓存中
+        if (fallbackUrl) {
+            const cachedFallback = getCachedImage(fallbackUrl);
+            if (cachedFallback && cachedFallback.complete && cachedFallback.naturalWidth > 0) {
+                img.dataset.preloaded = 'true';
+                img.dataset.preloading = 'false';
+                img.dataset.preloadSrc = cachedFallback.src;
+                img.dataset.preloadFallback = fallbackUrl;
+                img.src = cachedFallback.src;
+                img.dataset.loaded = 'true';
+                img.style.opacity = '1';
+                img.style.visibility = 'visible';
+                img.style.transition = 'none';
+                activePreloads--;
+                processPreloadQueue();
+                console.log(`✅ 图片 ${index + 1} 使用缓存（JPG回退）: ${fallbackUrl}`);
+                return;
+            }
+        }
     }
     
     const preloadImg = new Image();
@@ -1600,6 +1802,12 @@ function preloadImage(index) {
         img.dataset.preloading = 'false';
         // 如果预加载成功，将URL保存到img元素，这样切换时可以直接使用
         if (preloadImg.src) {
+            // 移动端：将图片添加到缓存
+            if (isMobile) {
+                imageCache.set(imageUrl, preloadImg);
+                imageCacheStatus.set(imageUrl, 'loaded');
+            }
+            
             // 保存预加载的URL，供切换时使用
             img.dataset.preloadSrc = preloadImg.src;
             // 直接设置img的src，这样切换时图片已经在缓存中，可以立即显示
@@ -1665,6 +1873,13 @@ function preloadImage(index) {
                 img.dataset.preloading = 'false';
                 // 保存预加载的URL，供切换时使用
                 if (fallbackImg.src) {
+                    // 移动端：将fallback图片添加到缓存
+                    if (isMobile) {
+                        imageCache.set(fallbackUrl, fallbackImg);
+                        imageCacheStatus.set(fallbackUrl, 'loaded');
+                        imageCacheStatus.set(imageUrl, 'loaded'); // 标记原URL也为已加载
+                    }
+                    
                     img.dataset.preloadSrc = fallbackImg.src;
                     // 直接设置img的src，这样切换时图片已经在缓存中
                     if (!img.src || img.src !== fallbackImg.src) {
@@ -2096,24 +2311,36 @@ async function showProduct(index) {
     const isMobile = isMobileDevice();
     let imageReady = isImageLoaded(index);
     
-    // 统一处理：快速检查并加载，移动端确保图片已准备好再切换
+    // 统一处理：快速检查并加载，移动端优先使用缓存
     if (!imageReady && targetImg) {
-        // 检查是否已预加载
-        const isPreloaded = targetImg.dataset.preloaded === 'true';
-        
-        if (isPreloaded) {
-            // 已预加载，立即设置src并检查
-            const preloadSrc = targetImg.dataset.preloadSrc || targetImg.dataset.preloadFallback;
-            if (preloadSrc) {
-                // 如果src还没设置或不同，立即设置
-                if (!targetImg.src || targetImg.src !== preloadSrc) {
-                    targetImg.src = preloadSrc;
+        // 移动端：优先从缓存获取图片
+        if (isMobile) {
+            const item = productImages[index];
+            const imageUrl = getImageUrl(item);
+            const cachedImg = getCachedImage(imageUrl);
+            
+            if (cachedImg && cachedImg.complete && cachedImg.naturalWidth > 0 && cachedImg.naturalHeight > 0) {
+                // 缓存中有图片，直接使用
+                targetImg.src = cachedImg.src;
+                targetImg.dataset.loaded = 'true';
+                targetImg.dataset.preloaded = 'true';
+                targetImg.dataset.preloadSrc = cachedImg.src;
+                targetImg.style.opacity = '1';
+                targetImg.style.visibility = 'visible';
+                targetImg.style.transition = 'none';
+                if (loadingPlaceholder) {
+                    loadingPlaceholder.style.display = 'none';
                 }
-                
-                // 立即检查图片是否已经在浏览器缓存中（预加载可能已完成）
-                if (targetImg.complete && targetImg.naturalWidth > 0 && targetImg.naturalHeight > 0) {
-                    // 图片已在缓存中，立即显示
+                imageReady = true;
+            } else if (item.fallback) {
+                // 尝试fallback缓存
+                const fallbackUrl = getImageUrl({ ...item, image: item.fallback });
+                const cachedFallback = getCachedImage(fallbackUrl);
+                if (cachedFallback && cachedFallback.complete && cachedFallback.naturalWidth > 0) {
+                    targetImg.src = cachedFallback.src;
                     targetImg.dataset.loaded = 'true';
+                    targetImg.dataset.preloaded = 'true';
+                    targetImg.dataset.preloadSrc = cachedFallback.src;
                     targetImg.style.opacity = '1';
                     targetImg.style.visibility = 'visible';
                     targetImg.style.transition = 'none';
@@ -2121,11 +2348,40 @@ async function showProduct(index) {
                         loadingPlaceholder.style.display = 'none';
                     }
                     imageReady = true;
-                } else {
-                    // 图片正在加载，移动端短暂等待确保图片准备好
-                    if (isMobile) {
-                        // 移动端：等待图片加载完成（最多等待200ms，避免卡顿）
-                        await new Promise(resolve => {
+                }
+            }
+        }
+        
+        // 如果缓存中没有，使用预加载逻辑
+        if (!imageReady) {
+            // 检查是否已预加载
+            const isPreloaded = targetImg.dataset.preloaded === 'true';
+            
+            if (isPreloaded) {
+                // 已预加载，立即设置src并检查
+                const preloadSrc = targetImg.dataset.preloadSrc || targetImg.dataset.preloadFallback;
+                if (preloadSrc) {
+                    // 如果src还没设置或不同，立即设置
+                    if (!targetImg.src || targetImg.src !== preloadSrc) {
+                        targetImg.src = preloadSrc;
+                    }
+                    
+                    // 立即检查图片是否已经在浏览器缓存中（预加载可能已完成）
+                    if (targetImg.complete && targetImg.naturalWidth > 0 && targetImg.naturalHeight > 0) {
+                        // 图片已在缓存中，立即显示
+                        targetImg.dataset.loaded = 'true';
+                        targetImg.style.opacity = '1';
+                        targetImg.style.visibility = 'visible';
+                        targetImg.style.transition = 'none';
+                        if (loadingPlaceholder) {
+                            loadingPlaceholder.style.display = 'none';
+                        }
+                        imageReady = true;
+                    } else {
+                        // 图片正在加载，移动端短暂等待确保图片准备好
+                        if (isMobile) {
+                            // 移动端：等待图片加载完成（最多等待200ms，避免卡顿）
+                            await new Promise(resolve => {
                             let resolved = false;
                             const maxWait = 200; // 最多等待200ms
                             const startTime = Date.now();
@@ -2200,11 +2456,11 @@ async function showProduct(index) {
                                     resolve();
                                 }
                             }, maxWait);
-                        });
-                        imageReady = isImageLoaded(index);
-                    } else {
-                        // 桌面端：异步处理，不等待
-                        const onLoad = () => {
+                            });
+                            imageReady = isImageLoaded(index);
+                        } else {
+                            // 桌面端：异步处理，不等待
+                            const onLoad = () => {
                             targetImg.dataset.loaded = 'true';
                             targetImg.style.opacity = '1';
                             targetImg.style.transition = 'none';
@@ -2214,10 +2470,11 @@ async function showProduct(index) {
                             targetImg.removeEventListener('load', onLoad);
                         };
                         
-                        if (targetImg.complete && targetImg.naturalWidth > 0) {
-                            onLoad();
-                        } else {
-                            targetImg.addEventListener('load', onLoad, { once: true });
+                            if (targetImg.complete && targetImg.naturalWidth > 0) {
+                                onLoad();
+                            } else {
+                                targetImg.addEventListener('load', onLoad, { once: true });
+                            }
                         }
                     }
                 }
@@ -2346,12 +2603,12 @@ async function showProduct(index) {
     }
     
     // 预加载接下来的多张图片（移动端更激进，预加载更多）
-    const preloadCount = isMobile ? 5 : 5; // 移动端和桌面端都预加载5张
+    const preloadCount = isMobile ? 8 : 5; // 移动端预加载8张，桌面端5张
     for (let i = 2; i <= preloadCount && (index + i) < productImages.length; i++) {
         // 错开时间，避免网络拥塞
         setTimeout(() => {
             preloadImage(index + i);
-        }, (i - 1) * 15); // 缩短到15ms，更快预加载
+        }, (i - 1) * 10); // 缩短到10ms，更快预加载
     }
     
     // 同时预加载上一张图片（如果存在），支持向后滑动
@@ -2363,7 +2620,15 @@ async function showProduct(index) {
     if (index > 1) {
         setTimeout(() => {
             preloadImage(index - 2);
-        }, 30);
+        }, 20);
+    }
+    
+    // 移动端：确保缓存中有足够的图片
+    if (isMobile && !cacheInitialized) {
+        // 如果缓存未初始化，立即初始化
+        initializeImageCache().catch(err => {
+            console.error('图片缓存初始化失败:', err);
+        });
     }
     
     updateProgress();
