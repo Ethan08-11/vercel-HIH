@@ -1994,7 +1994,7 @@ async function loadImage(index) {
     }
 }
 
-// 检查图片是否已加载完成（优化版：更快速的检查）
+// 检查图片是否已加载完成（优化版：更严格的检查，确保图片真正可用）
 function isImageLoaded(index) {
     const card = document.querySelector(`[data-index="${index}"]`);
     if (!card) return false;
@@ -2002,20 +2002,25 @@ function isImageLoaded(index) {
     const img = card.querySelector('.product-image');
     if (!img) return false;
     
+    // 严格检查：图片必须完全加载（包括naturalHeight，确保图片数据完整）
+    const isComplete = img.src && 
+                       img.complete && 
+                       img.naturalWidth > 0 &&
+                       img.naturalHeight > 0;
+    
     // 检查图片是否已加载完成（优先检查预加载状态）
-    // 如果已预加载，即使还没设置loaded标记，也认为已加载
-    if (img.dataset.preloaded === 'true' && img.src && img.complete && img.naturalWidth > 0) {
+    // 如果已预加载且图片数据完整，立即标记为已加载
+    if (img.dataset.preloaded === 'true' && isComplete) {
         // 预加载的图片已准备好，立即标记为已加载
         img.dataset.loaded = 'true';
         img.style.opacity = '1';
+        img.style.visibility = 'visible';
         return true;
     }
     
-    // 标准检查：图片已加载完成
+    // 标准检查：图片已加载完成且数据完整
     return img.dataset.loaded === 'true' && 
-           img.src && 
-           img.complete && 
-           img.naturalWidth > 0 &&
+           isComplete &&
            img.style.opacity !== '0';
 }
 
@@ -2083,13 +2088,13 @@ async function showProduct(index) {
     const isMobile = isMobileDevice();
     let imageReady = isImageLoaded(index);
     
-    // 如果图片未加载完成，尝试快速加载
-    if (!imageReady && targetImg) {
+    // 移动端：强制等待图片完全加载后再切换，避免白屏
+    if (isMobile && !imageReady && targetImg) {
         // 检查是否已预加载
         const isPreloaded = targetImg.dataset.preloaded === 'true';
         
         if (isPreloaded) {
-            // 已预加载，立即设置src并检查
+            // 已预加载，确保图片src已设置并等待加载完成
             const preloadSrc = targetImg.dataset.preloadSrc || targetImg.dataset.preloadFallback;
             if (preloadSrc) {
                 // 如果src还没设置或不同，立即设置
@@ -2097,75 +2102,143 @@ async function showProduct(index) {
                     targetImg.src = preloadSrc;
                 }
                 
-                // 立即检查图片是否已经在浏览器缓存中（预加载可能已完成）
-                if (targetImg.complete && targetImg.naturalWidth > 0) {
-                    // 图片已在缓存中，立即显示
-                    targetImg.dataset.loaded = 'true';
-                    targetImg.style.opacity = '1';
-                    if (loadingPlaceholder) {
-                        loadingPlaceholder.style.display = 'none';
-                    }
-                    imageReady = true;
-                } else {
-                    // 图片正在加载，等待加载完成（移动端等待更长时间）
-                    // 使用Promise等待图片加载完成，避免闪烁
-                    try {
-                        await new Promise((resolve, reject) => {
-                            const timeout = setTimeout(() => {
-                                // 超时后继续，不阻塞切换
-                                resolve();
-                            }, isMobile ? 500 : 300); // 移动端等待500ms，桌面端300ms
-                            
-                            const onLoad = () => {
-                                clearTimeout(timeout);
-                                targetImg.dataset.loaded = 'true';
-                                targetImg.style.opacity = '1';
-                                if (loadingPlaceholder) {
-                                    loadingPlaceholder.style.display = 'none';
-                                }
-                                targetImg.removeEventListener('load', onLoad);
-                                targetImg.removeEventListener('error', onError);
-                                resolve();
-                            };
-                            
-                            const onError = () => {
-                                clearTimeout(timeout);
-                                targetImg.removeEventListener('load', onLoad);
-                                targetImg.removeEventListener('error', onError);
-                                resolve(); // 即使失败也继续，不阻塞
-                            };
-                            
-                            // 如果图片已经加载完成但事件还没触发，立即调用
-                            if (targetImg.complete && targetImg.naturalWidth > 0) {
-                                onLoad();
-                            } else {
-                                targetImg.addEventListener('load', onLoad, { once: true });
-                                targetImg.addEventListener('error', onError, { once: true });
+                // 等待图片真正加载完成（使用轮询+事件监听双重保障）
+                await new Promise((resolve) => {
+                    let resolved = false;
+                    const maxWaitTime = 2000; // 最多等待2秒
+                    const startTime = Date.now();
+                    
+                    const checkAndResolve = () => {
+                        if (resolved) return;
+                        if (targetImg.complete && targetImg.naturalWidth > 0 && targetImg.naturalHeight > 0) {
+                            resolved = true;
+                            targetImg.dataset.loaded = 'true';
+                            targetImg.style.opacity = '1';
+                            if (loadingPlaceholder) {
+                                loadingPlaceholder.style.display = 'none';
                             }
-                        });
-                        imageReady = isImageLoaded(index);
-                    } catch (error) {
-                        console.warn(`等待图片加载时出错:`, error);
-                    }
-                }
+                            resolve();
+                        } else if (Date.now() - startTime > maxWaitTime) {
+                            // 超时后继续，不阻塞切换
+                            resolved = true;
+                            resolve();
+                        }
+                    };
+                    
+                    // 立即检查一次
+                    checkAndResolve();
+                    if (resolved) return;
+                    
+                    // 添加load事件监听
+                    const onLoad = () => {
+                        if (resolved) return;
+                        resolved = true;
+                        targetImg.dataset.loaded = 'true';
+                        targetImg.style.opacity = '1';
+                        if (loadingPlaceholder) {
+                            loadingPlaceholder.style.display = 'none';
+                        }
+                        targetImg.removeEventListener('load', onLoad);
+                        targetImg.removeEventListener('error', onError);
+                        resolve();
+                    };
+                    
+                    const onError = () => {
+                        if (resolved) return;
+                        resolved = true;
+                        targetImg.removeEventListener('load', onLoad);
+                        targetImg.removeEventListener('error', onError);
+                        resolve(); // 即使失败也继续，不阻塞
+                    };
+                    
+                    targetImg.addEventListener('load', onLoad, { once: true });
+                    targetImg.addEventListener('error', onError, { once: true });
+                    
+                    // 轮询检查（每50ms检查一次，确保及时响应）
+                    const checkInterval = setInterval(() => {
+                        checkAndResolve();
+                        if (resolved) {
+                            clearInterval(checkInterval);
+                        }
+                    }, 50);
+                    
+                    // 超时清理
+                    setTimeout(() => {
+                        clearInterval(checkInterval);
+                        if (!resolved) {
+                            resolved = true;
+                            resolve();
+                        }
+                    }, maxWaitTime);
+                });
+                
+                imageReady = isImageLoaded(index);
             }
         } else {
-            // 未预加载，立即开始加载图片
-            // 移动端：等待图片加载完成后再切换，避免闪烁
-            if (isMobile) {
-                try {
-                    await loadImage(index);
-                    imageReady = isImageLoaded(index);
-                } catch (error) {
-                    console.error(`加载图片 ${index} 失败:`, error);
-                    // 即使失败也继续，不阻塞切换
-                }
-            } else {
-                // 桌面端：异步加载，不阻塞切换
-                loadImage(index).catch(err => {
-                    console.error(`加载图片 ${index} 失败:`, err);
+            // 未预加载，立即开始加载并等待完成
+            try {
+                await loadImage(index);
+                // 再次确认图片已加载
+                await new Promise((resolve) => {
+                    const maxWaitTime = 2000;
+                    const startTime = Date.now();
+                    
+                    const checkAndResolve = () => {
+                        if (targetImg.complete && targetImg.naturalWidth > 0 && targetImg.naturalHeight > 0) {
+                            targetImg.dataset.loaded = 'true';
+                            targetImg.style.opacity = '1';
+                            if (loadingPlaceholder) {
+                                loadingPlaceholder.style.display = 'none';
+                            }
+                            resolve();
+                        } else if (Date.now() - startTime > maxWaitTime) {
+                            resolve();
+                        }
+                    };
+                    
+                    checkAndResolve();
+                    if (targetImg.complete && targetImg.naturalWidth > 0) return;
+                    
+                    const checkInterval = setInterval(() => {
+                        checkAndResolve();
+                        if (targetImg.complete && targetImg.naturalWidth > 0) {
+                            clearInterval(checkInterval);
+                            resolve();
+                        }
+                    }, 50);
+                    
+                    setTimeout(() => {
+                        clearInterval(checkInterval);
+                        resolve();
+                    }, maxWaitTime);
                 });
+                
+                imageReady = isImageLoaded(index);
+            } catch (error) {
+                console.error(`加载图片 ${index} 失败:`, error);
             }
+        }
+    } else if (!imageReady && targetImg) {
+        // 桌面端：快速检查并加载，不阻塞切换
+        const isPreloaded = targetImg.dataset.preloaded === 'true';
+        
+        if (isPreloaded) {
+            const preloadSrc = targetImg.dataset.preloadSrc || targetImg.dataset.preloadFallback;
+            if (preloadSrc && (!targetImg.src || targetImg.src !== preloadSrc)) {
+                targetImg.src = preloadSrc;
+            }
+            if (targetImg.complete && targetImg.naturalWidth > 0) {
+                targetImg.dataset.loaded = 'true';
+                targetImg.style.opacity = '1';
+                if (loadingPlaceholder) {
+                    loadingPlaceholder.style.display = 'none';
+                }
+                imageReady = true;
+            }
+        } else {
+            loadImage(index).catch(err => {
+                console.error(`加载图片 ${index} 失败:`, err);
+            });
         }
     }
     
@@ -2182,35 +2255,85 @@ async function showProduct(index) {
         targetImg.style.setProperty('max-width', '100%', 'important');
         targetImg.style.setProperty('max-height', '100%', 'important');
         
-        // 检查图片是否已加载（同步检查）
-        const imgLoaded = targetImg.dataset.loaded === 'true' && 
-                          targetImg.src && 
-                          targetImg.complete && 
-                          targetImg.naturalWidth > 0;
-        
-        if (imgLoaded) {
-            // 图片已加载，立即显示（不淡入，避免闪烁）
-            targetImg.style.opacity = '1';
-            targetImg.style.transition = 'none'; // 移除过渡，立即显示
-            // 隐藏加载占位符
-            if (loadingPlaceholder) {
-                loadingPlaceholder.style.display = 'none';
-            }
-        } else {
-            // 图片未加载完成
-            if (loadingPlaceholder) {
-                // 只在未预加载时显示占位符
-                if (!targetImg.dataset.preloaded) {
-                    loadingPlaceholder.style.display = 'flex';
-                } else {
-                    // 已预加载但还没完成，隐藏占位符（避免闪烁）
+        // 移动端：再次确认图片已加载并可见，避免白屏
+        if (isMobile) {
+            // 强制检查图片是否真正加载完成
+            const imgLoaded = targetImg.dataset.loaded === 'true' && 
+                              targetImg.src && 
+                              targetImg.complete && 
+                              targetImg.naturalWidth > 0 &&
+                              targetImg.naturalHeight > 0;
+            
+            if (imgLoaded) {
+                // 图片已加载，立即显示（不淡入，避免闪烁）
+                targetImg.style.opacity = '1';
+                targetImg.style.transition = 'none'; // 移除过渡，立即显示
+                targetImg.style.visibility = 'visible'; // 确保可见
+                // 隐藏加载占位符
+                if (loadingPlaceholder) {
                     loadingPlaceholder.style.display = 'none';
                 }
-            }
-            // 确保图片opacity为0，等待加载完成
-            if (targetImg.style.opacity !== '1') {
+            } else {
+                // 图片未加载完成，移动端不切换，等待加载完成
+                // 这已经在上面处理了，这里只是确保状态正确
+                if (loadingPlaceholder) {
+                    loadingPlaceholder.style.display = 'flex';
+                }
                 targetImg.style.opacity = '0';
             }
+        } else {
+            // 桌面端：快速检查
+            const imgLoaded = targetImg.dataset.loaded === 'true' && 
+                              targetImg.src && 
+                              targetImg.complete && 
+                              targetImg.naturalWidth > 0;
+            
+            if (imgLoaded) {
+                targetImg.style.opacity = '1';
+                targetImg.style.transition = 'none';
+                if (loadingPlaceholder) {
+                    loadingPlaceholder.style.display = 'none';
+                }
+            } else {
+                if (loadingPlaceholder) {
+                    if (!targetImg.dataset.preloaded) {
+                        loadingPlaceholder.style.display = 'flex';
+                    } else {
+                        loadingPlaceholder.style.display = 'none';
+                    }
+                }
+                if (targetImg.style.opacity !== '1') {
+                    targetImg.style.opacity = '0';
+                }
+            }
+        }
+    }
+    
+    // 移动端：在切换前最后确认图片已准备好，避免白屏
+    if (isMobile && targetImg) {
+        const finalCheck = targetImg.dataset.loaded === 'true' && 
+                          targetImg.src && 
+                          targetImg.complete && 
+                          targetImg.naturalWidth > 0 &&
+                          targetImg.naturalHeight > 0;
+        
+        if (!finalCheck) {
+            // 图片未准备好，再等待一小段时间
+            await new Promise(resolve => {
+                const maxWait = 500; // 最多再等500ms
+                const startTime = Date.now();
+                const checkInterval = setInterval(() => {
+                    const nowReady = targetImg.dataset.loaded === 'true' && 
+                                    targetImg.src && 
+                                    targetImg.complete && 
+                                    targetImg.naturalWidth > 0 &&
+                                    targetImg.naturalHeight > 0;
+                    if (nowReady || Date.now() - startTime > maxWait) {
+                        clearInterval(checkInterval);
+                        resolve();
+                    }
+                }, 50);
+            });
         }
     }
     
