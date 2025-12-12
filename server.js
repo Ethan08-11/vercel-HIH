@@ -1179,39 +1179,71 @@ module.exports = app;
 // 使用 process.stdout.write 确保立即输出，不被缓冲
 // 这对于 Zeabur 日志系统非常重要
 (function() {
-    const timestamp = new Date().toISOString();
-    const lines = [
-        '='.repeat(60),
-        '🚀 应用开始启动...',
-        '   时间: ' + timestamp,
-        '   Node版本: ' + process.version,
-        '   工作目录: ' + __dirname,
-        '   进程ID: ' + process.pid,
-        '='.repeat(60)
-    ];
-    
-    lines.forEach(line => {
-        process.stdout.write(line + '\n');
-    });
-    
-    // 强制刷新输出（多次尝试确保输出）
-    if (process.stdout && typeof process.stdout.flush === 'function') {
-        try {
-            process.stdout.flush();
-        } catch (e) {
-            // 忽略 flush 错误
-        }
-    }
-    
-    // 使用 setImmediate 确保输出被处理
-    setImmediate(() => {
-        process.stdout.write('📋 模块加载完成，准备初始化服务器...\n');
+    // 立即输出第一条日志，确保 Zeabur 能看到
+    try {
+        process.stdout.write('\n');
+        process.stdout.write('='.repeat(60) + '\n');
+        process.stdout.write('🚀 Node.js 应用开始启动\n');
+        process.stdout.write('='.repeat(60) + '\n');
+        
+        const timestamp = new Date().toISOString();
+        process.stdout.write(`⏰ 时间: ${timestamp}\n`);
+        process.stdout.write(`📦 Node版本: ${process.version}\n`);
+        process.stdout.write(`📁 工作目录: ${__dirname}\n`);
+        process.stdout.write(`🆔 进程ID: ${process.pid}\n`);
+        process.stdout.write(`🌍 平台: ${process.platform}\n`);
+        process.stdout.write(`💻 架构: ${process.arch}\n`);
+        
+        // 输出环境变量状态（不输出敏感信息）
+        process.stdout.write('\n📋 环境变量检查:\n');
+        process.stdout.write(`   NODE_ENV: ${process.env.NODE_ENV || '未设置'}\n`);
+        process.stdout.write(`   PORT: ${process.env.PORT || '未设置（将使用3000）'}\n`);
+        process.stdout.write(`   MONGODB_URI: ${process.env.MONGODB_URI ? '已设置（长度: ' + process.env.MONGODB_URI.length + '）' : '未设置'}\n`);
+        process.stdout.write(`   DB_NAME: ${process.env.DB_NAME || '未设置（将使用questionnaire）'}\n`);
+        process.stdout.write(`   ZEABUR: ${process.env.ZEABUR || '未设置'}\n`);
+        
+        process.stdout.write('='.repeat(60) + '\n');
+        process.stdout.write('📋 开始加载模块...\n');
+        
+        // 强制刷新输出
         if (process.stdout && typeof process.stdout.flush === 'function') {
             try {
                 process.stdout.flush();
-            } catch (e) {}
+            } catch (e) {
+                // 忽略 flush 错误
+            }
         }
-    });
+        
+        // 使用多个 setImmediate 确保输出被处理
+        setImmediate(() => {
+            process.stdout.write('✅ Express 模块已加载\n');
+            if (process.stdout && typeof process.stdout.flush === 'function') {
+                try {
+                    process.stdout.flush();
+                } catch (e) {}
+            }
+        });
+        
+        setImmediate(() => {
+            process.stdout.write('✅ 所有模块加载完成，准备初始化服务器...\n');
+            if (process.stdout && typeof process.stdout.flush === 'function') {
+                try {
+                    process.stdout.flush();
+                } catch (e) {}
+            }
+        });
+    } catch (error) {
+        // 如果输出日志时出错，至少输出错误信息
+        try {
+            process.stderr.write('❌ 输出启动日志时出错: ' + error.message + '\n');
+            if (process.stderr && typeof process.stderr.flush === 'function') {
+                process.stderr.flush();
+            }
+        } catch (e) {
+            // 如果连错误都无法输出，至少尝试输出到控制台
+            console.error('无法输出日志:', error);
+        }
+    }
 })();
 
 // 本地开发时启动服务器
@@ -1219,22 +1251,51 @@ if (require.main === module) {
     // 使用 try-catch 包装，确保所有错误都被捕获
     (async () => {
         try {
-            console.log('\n📋 服务器启动流程开始...');
-            console.log('   进程ID:', process.pid);
-            console.log('   平台:', process.platform);
-            console.log('   架构:', process.arch);
+            // 使用 process.stdout.write 确保立即输出
+            process.stdout.write('\n');
+            process.stdout.write('='.repeat(60) + '\n');
+            process.stdout.write('📋 服务器启动流程开始\n');
+            process.stdout.write('='.repeat(60) + '\n');
+            process.stdout.write(`   进程ID: ${process.pid}\n`);
+            process.stdout.write(`   平台: ${process.platform}\n`);
+            process.stdout.write(`   架构: ${process.arch}\n`);
             
             // 立即输出环境变量信息（不输出敏感信息）
-            console.log('\n📋 环境变量检查:');
-            console.log('   NODE_ENV:', process.env.NODE_ENV || '未设置');
-            console.log('   PORT:', process.env.PORT || '未设置（将使用3000）');
-            console.log('   MONGODB_URI:', process.env.MONGODB_URI ? '已设置' : '未设置');
-            console.log('   ZEABUR:', process.env.ZEABUR || '未设置');
+            process.stdout.write('\n📋 环境变量检查:\n');
+            process.stdout.write(`   NODE_ENV: ${process.env.NODE_ENV || '未设置'}\n`);
+            process.stdout.write(`   PORT: ${process.env.PORT || '未设置（将使用3000）'}\n`);
+            process.stdout.write(`   MONGODB_URI: ${process.env.MONGODB_URI ? '已设置（长度: ' + process.env.MONGODB_URI.length + '）' : '未设置'}\n`);
+            process.stdout.write(`   DB_NAME: ${process.env.DB_NAME || '未设置（将使用questionnaire）'}\n`);
+            process.stdout.write(`   ZEABUR: ${process.env.ZEABUR || '未设置'}\n`);
+            
+            // 强制刷新
+            if (process.stdout && typeof process.stdout.flush === 'function') {
+                try {
+                    process.stdout.flush();
+                } catch (e) {}
+            }
+            
+            process.stdout.write('\n🔄 开始初始化服务器...\n');
+            if (process.stdout && typeof process.stdout.flush === 'function') {
+                try {
+                    process.stdout.flush();
+                } catch (e) {}
+            }
             
             await initServer();
             
-            console.log('\n✅ 服务器初始化完成！');
-            console.log('   服务器已就绪，等待请求...');
+            process.stdout.write('\n');
+            process.stdout.write('='.repeat(60) + '\n');
+            process.stdout.write('✅ 服务器初始化完成！\n');
+            process.stdout.write('   服务器已就绪，等待请求...\n');
+            process.stdout.write('='.repeat(60) + '\n');
+            
+            // 强制刷新
+            if (process.stdout && typeof process.stdout.flush === 'function') {
+                try {
+                    process.stdout.flush();
+                } catch (e) {}
+            }
         } catch (error) {
             // 使用 stderr 输出错误，确保能被 Zeabur 捕获
             const outputError = (msg) => {

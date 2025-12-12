@@ -53,11 +53,11 @@ async function connectDB() {
         
         // 在 Zeabur 上使用更长的超时时间，因为网络可能较慢
         // 但使用 Promise.race 在应用层面控制总超时时间
-        const timeout = isZeabur ? 30000 : 30000; // 统一使用30秒，让 MongoDB 驱动自己处理
+        const timeout = isZeabur ? 60000 : 30000; // Zeabur上使用60秒，本地30秒
         
         // 连接 MongoDB（带重试机制）
         let lastError = null;
-        const maxRetries = isZeabur ? 2 : 1; // Zeabur上重试2次
+        const maxRetries = isZeabur ? 3 : 1; // Zeabur上重试3次，增加重试次数
         
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
@@ -72,20 +72,23 @@ async function connectDB() {
         client = new MongoClient(MONGODB_URI, {
                         serverSelectionTimeoutMS: timeout, // 服务器选择超时
             connectTimeoutMS: timeout, // 连接超时
-                        socketTimeoutMS: 60000, // socket超时60秒（避免无限等待）
+                        socketTimeoutMS: isZeabur ? 120000 : 60000, // Zeabur上120秒，本地60秒（处理incomplete read错误）
             maxPoolSize: 10, // 连接池大小
             minPoolSize: 1,
             retryWrites: true, // 启用重试写入
             retryReads: true, // 启用重试读取
                         heartbeatFrequencyMS: 10000, // 心跳频率10秒
+                        // 增加连接池选项，提高稳定性
+                        maxIdleTimeMS: 30000, // 空闲连接30秒后关闭
+                        waitQueueTimeoutMS: 10000, // 等待连接池连接的超时时间
                     });
                 }
                 
-                // 在 Zeabur 上，使用应用层超时控制（30秒）
+                // 在 Zeabur 上，使用应用层超时控制（60秒）
                 if (isZeabur) {
                     const connectPromise = client.connect();
                     const timeoutPromise = new Promise((_, reject) => 
-                        setTimeout(() => reject(new Error('MongoDB连接超时（30秒）')), 30000)
+                        setTimeout(() => reject(new Error('MongoDB连接超时（60秒）')), timeout)
                     );
                     await Promise.race([connectPromise, timeoutPromise]);
                 } else {
@@ -132,11 +135,24 @@ async function connectDB() {
         // 只在首次连接失败时输出详细错误，避免重复日志
         const isFirstConnection = !client || !db;
         if (isFirstConnection) {
-        console.error('❌ MongoDB 连接失败:');
-        console.error('   错误消息:', error.message);
+            // 检测是否为本地开发环境
+            const isLocalDev = !process.env.ZEABUR && 
+                              (process.env.NODE_ENV !== 'production' || !process.env.PORT || process.env.PORT === '3000');
+            
+            console.error('\n' + '='.repeat(60));
+            console.error('⚠️  MongoDB 连接失败');
+            console.error('='.repeat(60));
+            console.error('   错误消息:', error.message);
             console.error('   错误代码:', error.code || 'N/A');
             if (error.name) {
                 console.error('   错误类型:', error.name);
+            }
+            
+            // 如果是本地开发环境，提供更友好的提示
+            if (isLocalDev) {
+                console.error('\n📌 本地开发环境提示:');
+                console.error('   这是正常的！本地开发环境通常无法直接连接到 Zeabur MongoDB。');
+                console.error('   应用会自动使用文件系统存储，所有功能仍然正常工作。');
             }
             
             // 提供诊断信息
@@ -158,12 +174,34 @@ async function connectDB() {
             console.error('   端口:', process.env.PORT || '3000');
             
             // 常见错误提示
-            if (error.message.includes('timeout') || error.message.includes('timed out')) {
+            if (error.message.includes('ECONNRESET') || error.code === 'ECONNRESET') {
+                console.error('\n💡 ECONNRESET 错误说明:');
+                console.error('   这是网络连接被重置的错误，通常发生在以下情况:');
+                console.error('   1. 本地开发环境尝试连接 Zeabur MongoDB（最常见）');
+                console.error('     → Zeabur MongoDB 只允许从 Zeabur 内部网络访问');
+                console.error('     → 本地计算机无法直接连接，这是正常的安全设置');
+                console.error('   2. 网络不稳定或防火墙阻止连接');
+                console.error('   3. MongoDB 服务器主动关闭了连接');
+                console.error('\n✅ 解决方案:');
+                console.error('   - 在本地开发时，应用会自动使用文件系统存储');
+                console.error('   - 所有功能仍然正常工作，数据保存在 data/ 目录');
+                console.error('   - 在 Zeabur 生产环境中，连接会自动成功');
+                console.error('   - 如果需要同步数据，可以使用 API 导出: npm run sync-api');
+            } else if (error.message.includes('timeout') || error.message.includes('timed out') || 
+                       error.message.includes('incomplete read') || error.message.includes('i/o timeout')) {
                 console.error('\n💡 可能的原因:');
                 console.error('   1. MongoDB 服务器不可达（网络问题、防火墙阻止）');
-                console.error('   2. MongoDB 服务器地址或端口错误');
-                console.error('   3. 网络延迟过高，超过30秒超时限制');
+                console.error('   2. MongoDB 服务器地址或端口错误（最常见）');
+                console.error('     → 检查环境变量 MONGODB_URI 中的端口号是否与 MongoDB 服务页面显示的端口号一致');
+                console.error('     → 错误信息中显示的端口号（如 :25167）就是 MongoDB 实际使用的端口号');
+                console.error('   3. 网络延迟过高，超过超时限制');
                 console.error('   4. MongoDB 服务器未运行或已关闭');
+                console.error('   5. 本地开发环境无法连接 Zeabur MongoDB（这是正常的）');
+                console.error('\n🔧 解决方案:');
+                console.error('   1. 在 Zeabur MongoDB 服务页面，复制完整的连接字符串');
+                console.error('   2. 更新环境变量 MONGODB_URI，确保端口号正确');
+                console.error('   3. 等待 MongoDB 服务完全启动（1-3分钟）');
+                console.error('   4. 查看详细排查指南: Zeabur_MongoDB连接问题排查.md');
             } else if (error.message.includes('authentication') || error.message.includes('auth')) {
                 console.error('\n💡 可能的原因:');
                 console.error('   1. MongoDB 用户名或密码错误');
@@ -172,12 +210,64 @@ async function connectDB() {
                 console.error('\n💡 可能的原因:');
                 console.error('   1. MongoDB 服务器地址无法解析（DNS问题）');
                 console.error('   2. 连接字符串中的主机名错误');
+            } else if (error.message.includes('ECONNREFUSED') || error.code === 'ECONNREFUSED') {
+                console.error('\n💡 ECONNREFUSED 错误说明:');
+                console.error('   连接被拒绝，可能的原因:');
+                console.error('   1. MongoDB 服务器未运行或端口错误');
+                console.error('   2. 防火墙阻止了连接');
+                console.error('   3. 本地开发环境无法连接 Zeabur MongoDB（这是正常的）');
+            } else if (error.message.includes('connection pool') || error.message.includes('incomplete read')) {
+                console.error('\n💡 连接池错误说明:');
+                console.error('   这是 "incomplete read of message header" 或 "connection pool cleared" 错误');
+                console.error('   通常发生在以下情况:');
+                console.error('   1. MongoDB 端口号配置错误（最常见）');
+                
+                // 尝试从错误信息中提取端口号
+                const portMatch = error.message.match(/:(\d{4,5})/);
+                if (portMatch) {
+                    const detectedPort = portMatch[1];
+                    console.error(`\n   ⚠️  检测到错误信息中的端口号: ${detectedPort}`);
+                    console.error('     → 这个端口号就是 MongoDB 实际使用的端口号');
+                    
+                    // 尝试从 MONGODB_URI 中提取当前配置的端口号
+                    const currentPortMatch = MONGODB_URI.match(/:(\d{4,5})\//);
+                    if (currentPortMatch) {
+                        const currentPort = currentPortMatch[1];
+                        if (currentPort !== detectedPort) {
+                            console.error(`     → 当前环境变量中的端口号: ${currentPort}`);
+                            console.error(`     → 端口号不匹配！需要将 ${currentPort} 改为 ${detectedPort}`);
+                            console.error('\n   🔧 快速修复:');
+                            console.error(`     在 Zeabur 环境变量中，将 MONGODB_URI 中的端口号从 ${currentPort} 改为 ${detectedPort}`);
+                        } else {
+                            console.error(`     → 当前环境变量中的端口号: ${currentPort}（已匹配）`);
+                            console.error('     → 端口号匹配，可能是其他问题（服务未启动、网络问题等）');
+                        }
+                    }
+                }
+                
+                console.error('   2. MongoDB 服务未完全启动（等待 1-3 分钟）');
+                console.error('   3. 网络不稳定导致连接中断');
+                console.error('\n🔧 解决方案:');
+                console.error('   1. 在 Zeabur MongoDB 服务页面，查看 "MongoDB connection string"');
+                console.error('   2. 复制完整的连接字符串（包含正确的端口号）');
+                console.error('   3. 更新环境变量 MONGODB_URI');
+                console.error('   4. 等待服务重新部署完成');
+                console.error('   5. 查看详细排查指南: Zeabur_MongoDB连接问题排查.md');
             }
             
             // 只在开发环境输出完整堆栈
             if (process.env.NODE_ENV !== 'production' && error.stack) {
                 console.error('\n   错误堆栈:', error.stack);
-        }
+            }
+            
+            // 添加总结信息
+            console.error('\n' + '='.repeat(60));
+            console.error('✅ 应用将继续运行，使用本地文件系统存储');
+            console.error('   数据将保存在 data/ 目录');
+            if (isLocalDev) {
+                console.error('   在 Zeabur 生产环境中，MongoDB 连接会自动成功');
+            }
+            console.error('='.repeat(60) + '\n');
         } else {
             // 非首次连接失败，只输出简要信息
             console.warn('⚠️ MongoDB 重连失败:', error.message);
