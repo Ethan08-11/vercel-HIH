@@ -30,6 +30,13 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+// 请求日志中间件（记录所有HTTP请求，确保Zeabur能看到活动）
+app.use((req, res, next) => {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] ${req.method} ${req.path}`);
+    next();
+});
+
 // 启用压缩（gzip/brotli）- 必须在静态文件服务之前
 app.use(compression({
     filter: (req, res) => {
@@ -211,10 +218,8 @@ app.get('/Picture/:filename', (req, res) => {
 // 根路径返回 index.html
 app.get('/', (req, res) => {
     try {
-        console.log('请求根路径，发送 index.html');
-        console.log('__dirname:', __dirname);
-        const indexPath = path.join(__dirname, 'index.html');
-        console.log('index.html 路径:', indexPath);
+        const timestamp = new Date().toISOString();
+        console.log(`[${timestamp}] 请求根路径，发送 index.html`);
         
         // 设置HTML文件的缓存头 - 强制不缓存，确保移动端及时更新
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
@@ -224,10 +229,10 @@ app.get('/', (req, res) => {
         
         res.sendFile('index.html', { root: __dirname }, (err) => {
             if (err) {
-                console.error('发送 index.html 失败:', err);
+                console.error('❌ 发送 index.html 失败:', err.message);
                 res.status(500).send('无法加载页面: ' + err.message);
             } else {
-                console.log('index.html 发送成功');
+                console.log('✅ index.html 发送成功');
             }
         });
     } catch (error) {
@@ -956,6 +961,29 @@ function startServerFast() {
             if (process.stdout && typeof process.stdout.flush === 'function') {
                 process.stdout.flush();
             }
+            
+            // 在Zeabur上，启动定期心跳日志，确保日志系统能看到应用在运行
+            if (isZeabur) {
+                // 每30秒输出一次心跳日志
+                const heartbeatInterval = setInterval(() => {
+                    const uptime = Math.floor(process.uptime());
+                    const memUsage = process.memoryUsage();
+                    console.log(`💓 [心跳] 服务器运行中 - 运行时间: ${uptime}秒, 内存: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB / ${Math.round(memUsage.heapTotal / 1024 / 1024)}MB`);
+                    
+                    // 确保日志被刷新
+                    if (process.stdout && typeof process.stdout.flush === 'function') {
+                        process.stdout.flush();
+                    }
+                }, 30000); // 30秒
+                
+                // 在服务器关闭时清除定时器
+                serverInstance.on('close', () => {
+                    clearInterval(heartbeatInterval);
+                });
+                
+                // 输出初始心跳
+                console.log('💓 [心跳] 服务器已启动，心跳监控已启用（每30秒）');
+            }
         }).on('error', (err) => {
             console.error('\n' + '='.repeat(60));
             console.error('❌ HTTP服务器启动失败！');
@@ -1037,12 +1065,21 @@ function startServerFast() {
 module.exports = app;
 
 // 立即输出启动信息（在模块加载时）
-console.log('='.repeat(60));
-console.log('🚀 应用开始启动...');
-console.log('   时间:', new Date().toISOString());
-console.log('   Node版本:', process.version);
-console.log('   工作目录:', __dirname);
-console.log('='.repeat(60));
+// 使用 process.stdout.write 确保立即输出，不被缓冲
+process.stdout.write('='.repeat(60) + '\n');
+process.stdout.write('🚀 应用开始启动...\n');
+process.stdout.write('   时间: ' + new Date().toISOString() + '\n');
+process.stdout.write('   Node版本: ' + process.version + '\n');
+process.stdout.write('   工作目录: ' + __dirname + '\n');
+process.stdout.write('='.repeat(60) + '\n');
+
+// 强制刷新输出
+if (process.stdout && typeof process.stdout.flush === 'function') {
+    process.stdout.flush();
+} else {
+    // 如果 flush 不可用，使用 setTimeout 确保输出
+    setTimeout(() => {}, 0);
+}
 
 // 本地开发时启动服务器
 if (require.main === module) {
