@@ -1994,7 +1994,7 @@ async function loadImage(index) {
     }
 }
 
-// 检查图片是否已加载完成（优化版：更严格的检查，确保图片真正可用）
+// 检查图片是否已加载完成（优化版：最严格的检查，确保图片真正可用且可见）
 function isImageLoaded(index) {
     const card = document.querySelector(`[data-index="${index}"]`);
     if (!card) return false;
@@ -2008,6 +2008,9 @@ function isImageLoaded(index) {
                        img.naturalWidth > 0 &&
                        img.naturalHeight > 0;
     
+    // 检查图片是否真正可见（offsetWidth和offsetHeight必须大于0）
+    const isVisible = img.offsetWidth > 0 && img.offsetHeight > 0;
+    
     // 检查图片是否已加载完成（优先检查预加载状态）
     // 如果已预加载且图片数据完整，立即标记为已加载
     if (img.dataset.preloaded === 'true' && isComplete) {
@@ -2015,12 +2018,14 @@ function isImageLoaded(index) {
         img.dataset.loaded = 'true';
         img.style.opacity = '1';
         img.style.visibility = 'visible';
+        img.style.transition = 'none';
         return true;
     }
     
-    // 标准检查：图片已加载完成且数据完整
+    // 标准检查：图片已加载完成、数据完整、且可见
     return img.dataset.loaded === 'true' && 
            isComplete &&
+           (isVisible || img.style.opacity === '1') &&
            img.style.opacity !== '0';
 }
 
@@ -2309,31 +2314,134 @@ async function showProduct(index) {
         }
     }
     
-    // 移动端：在切换前最后确认图片已准备好，避免白屏
+    // 移动端：在切换前强制确认图片已准备好，未准备好则不切换，彻底避免白屏
     if (isMobile && targetImg) {
-        const finalCheck = targetImg.dataset.loaded === 'true' && 
-                          targetImg.src && 
-                          targetImg.complete && 
-                          targetImg.naturalWidth > 0 &&
-                          targetImg.naturalHeight > 0;
+        // 多重验证：确保图片数据完整、已加载、已设置src、且真正可见
+        const finalCheck = () => {
+            return targetImg.dataset.loaded === 'true' && 
+                   targetImg.src && 
+                   targetImg.complete && 
+                   targetImg.naturalWidth > 0 &&
+                   targetImg.naturalHeight > 0 &&
+                   targetImg.style.opacity === '1' &&
+                   targetImg.offsetWidth > 0 &&
+                   targetImg.offsetHeight > 0;
+        };
         
-        if (!finalCheck) {
-            // 图片未准备好，再等待一小段时间
+        if (!finalCheck()) {
+            // 图片未准备好，强制等待直到准备好（最多等待3秒）
+            let resolved = false;
             await new Promise(resolve => {
-                const maxWait = 500; // 最多再等500ms
+                const maxWait = 3000; // 最多等待3秒
                 const startTime = Date.now();
-                const checkInterval = setInterval(() => {
-                    const nowReady = targetImg.dataset.loaded === 'true' && 
-                                    targetImg.src && 
-                                    targetImg.complete && 
-                                    targetImg.naturalWidth > 0 &&
-                                    targetImg.naturalHeight > 0;
-                    if (nowReady || Date.now() - startTime > maxWait) {
-                        clearInterval(checkInterval);
+                
+                const checkAndResolve = () => {
+                    if (resolved) return;
+                    
+                    // 确保图片src已设置
+                    if (!targetImg.src) {
+                        const preloadSrc = targetImg.dataset.preloadSrc || targetImg.dataset.preloadFallback || targetImg.dataset.src;
+                        if (preloadSrc) {
+                            targetImg.src = preloadSrc;
+                        }
+                    }
+                    
+                    // 检查图片是否真正准备好
+                    if (finalCheck()) {
+                        resolved = true;
+                        // 确保图片可见
+                        targetImg.style.opacity = '1';
+                        targetImg.style.visibility = 'visible';
+                        targetImg.style.transition = 'none';
+                        if (loadingPlaceholder) {
+                            loadingPlaceholder.style.display = 'none';
+                        }
+                        resolve();
+                        return;
+                    }
+                    
+                    // 超时后也继续（避免永久阻塞），但记录警告
+                    if (Date.now() - startTime > maxWait) {
+                        resolved = true;
+                        console.warn(`图片 ${index + 1} 加载超时，但继续切换`);
+                        // 即使超时，也尝试显示图片
+                        if (targetImg.src && targetImg.complete) {
+                            targetImg.dataset.loaded = 'true';
+                            targetImg.style.opacity = '1';
+                            targetImg.style.visibility = 'visible';
+                        }
                         resolve();
                     }
-                }, 50);
+                };
+                
+                // 立即检查一次
+                checkAndResolve();
+                if (resolved) return;
+                
+                // 添加load事件监听
+                const onLoad = () => {
+                    if (resolved) return;
+                    targetImg.dataset.loaded = 'true';
+                    targetImg.style.opacity = '1';
+                    targetImg.style.visibility = 'visible';
+                    targetImg.style.transition = 'none';
+                    if (loadingPlaceholder) {
+                        loadingPlaceholder.style.display = 'none';
+                    }
+                    targetImg.removeEventListener('load', onLoad);
+                    targetImg.removeEventListener('error', onError);
+                    resolved = true;
+                    resolve();
+                };
+                
+                const onError = () => {
+                    if (resolved) return;
+                    targetImg.removeEventListener('load', onLoad);
+                    targetImg.removeEventListener('error', onError);
+                    // 即使失败也继续，避免永久阻塞
+                    resolved = true;
+                    resolve();
+                };
+                
+                // 如果图片已经加载完成但事件还没触发
+                if (targetImg.complete && targetImg.naturalWidth > 0 && targetImg.naturalHeight > 0) {
+                    onLoad();
+                    return;
+                }
+                
+                targetImg.addEventListener('load', onLoad, { once: true });
+                targetImg.addEventListener('error', onError, { once: true });
+                
+                // 轮询检查（每30ms检查一次，更频繁）
+                const checkInterval = setInterval(() => {
+                    checkAndResolve();
+                    if (resolved) {
+                        clearInterval(checkInterval);
+                    }
+                }, 30);
+                
+                // 超时清理
+                setTimeout(() => {
+                    clearInterval(checkInterval);
+                    if (!resolved) {
+                        resolved = true;
+                        resolve();
+                    }
+                }, maxWait);
             });
+            
+            // 最后再次确认
+            if (!finalCheck()) {
+                // 如果还是没准备好，强制设置状态（避免永久白屏）
+                if (targetImg.src && targetImg.complete) {
+                    targetImg.dataset.loaded = 'true';
+                    targetImg.style.opacity = '1';
+                    targetImg.style.visibility = 'visible';
+                    if (loadingPlaceholder) {
+                        loadingPlaceholder.style.display = 'none';
+                    }
+                }
+            }
         }
     }
     
@@ -2352,30 +2460,53 @@ async function showProduct(index) {
     // 移动端和桌面端：更激进的预加载策略，提前预加载更多图片
     // 注意：isMobile 已在函数前面声明，直接使用
     
-    // 立即预加载下一张图片（最高优先级）
-    if (index + 1 < productImages.length) {
-        preloadImage(index + 1);
-    }
-    
-    // 预加载接下来的多张图片（移动端更激进，提前预加载更多）
-    const preloadCount = isMobile ? 4 : 5; // 移动端预加载4张，桌面端5张
-    for (let i = 2; i <= preloadCount && (index + i) < productImages.length; i++) {
-        // 错开时间，避免网络拥塞，但延迟更短
-        setTimeout(() => {
-            preloadImage(index + i);
-        }, (i - 1) * 20); // 缩短到20ms，更快预加载
-    }
-    
-    // 同时预加载上一张图片（如果存在），支持向后滑动
-    if (index > 0) {
-        preloadImage(index - 1);
-    }
-    
-    // 预加载更前面的图片（向后滑动时使用）
-    if (index > 1) {
-        setTimeout(() => {
-            preloadImage(index - 2);
-        }, 50);
+    // 移动端：立即预加载下一张图片（最高优先级），确保切换前已准备好
+    if (isMobile) {
+        // 立即预加载下一张图片，不延迟
+        if (index + 1 < productImages.length) {
+            preloadImage(index + 1);
+            // 移动端：等待下一张图片预加载完成（最多等待500ms）
+            const nextCard = document.querySelector(`[data-index="${index + 1}"]`);
+            const nextImg = nextCard ? nextCard.querySelector('.product-image') : null;
+            if (nextImg && nextImg.dataset.preloaded !== 'true') {
+                // 异步等待预加载完成，不阻塞当前切换
+                setTimeout(() => {
+                    if (nextImg.dataset.preloaded !== 'true') {
+                        // 如果还没预加载完成，再次尝试
+                        preloadImage(index + 1);
+                    }
+                }, 100);
+            }
+        }
+        
+        // 预加载接下来的2-3张图片
+        const preloadCount = 3;
+        for (let i = 2; i <= preloadCount && (index + i) < productImages.length; i++) {
+            setTimeout(() => {
+                preloadImage(index + i);
+            }, (i - 1) * 30);
+        }
+        
+        // 同时预加载上一张图片（如果存在），支持向后滑动
+        if (index > 0) {
+            preloadImage(index - 1);
+        }
+    } else {
+        // 桌面端：快速预加载，不等待
+        if (index + 1 < productImages.length) {
+            preloadImage(index + 1);
+        }
+        
+        const preloadCount = 5;
+        for (let i = 2; i <= preloadCount && (index + i) < productImages.length; i++) {
+            setTimeout(() => {
+                preloadImage(index + i);
+            }, (i - 1) * 20);
+        }
+        
+        if (index > 0) {
+            preloadImage(index - 1);
+        }
     }
     
     updateProgress();
@@ -2385,26 +2516,88 @@ async function showProduct(index) {
     startAutoPlay();
 }
 
-// 上一个产品（支持循环）- 优化版：立即响应，不等待
-function previousQuestion() {
+// 上一个产品（支持循环）- 优化版：移动端等待图片准备好
+async function previousQuestion() {
     stopAutoPlay(); // 用户手动操作时停止自动轮播
     
     // 立即执行，不等待异步操作
     const targetIndex = currentIndex > 0 ? currentIndex - 1 : productImages.length - 1;
     
-    // 直接调用，不使用 requestAnimationFrame，减少延迟
-        showProduct(targetIndex);
+    // 移动端：确保图片准备好后再切换
+    const isMobile = isMobileDevice();
+    if (isMobile) {
+        // 先预加载目标图片，确保切换前已准备好
+        const targetCard = document.querySelector(`[data-index="${targetIndex}"]`);
+        const targetImg = targetCard ? targetCard.querySelector('.product-image') : null;
+        
+        if (targetImg && !isImageLoaded(targetIndex)) {
+            // 图片未准备好，先预加载
+            if (targetImg.dataset.preloaded !== 'true') {
+                preloadImage(targetIndex);
+            }
+            
+            // 等待图片准备好（最多等待1秒）
+            await new Promise(resolve => {
+                const maxWait = 1000;
+                const startTime = Date.now();
+                const checkInterval = setInterval(() => {
+                    if (isImageLoaded(targetIndex) || Date.now() - startTime > maxWait) {
+                        clearInterval(checkInterval);
+                        resolve();
+                    }
+                }, 50);
+                setTimeout(() => {
+                    clearInterval(checkInterval);
+                    resolve();
+                }, maxWait);
+            });
+        }
+    }
+    
+    // 调用showProduct（移动端会再次确认图片已准备好）
+    showProduct(targetIndex);
 }
 
-// 下一个产品（支持循环）- 优化版：立即响应，不等待
-function nextQuestion() {
+// 下一个产品（支持循环）- 优化版：移动端等待图片准备好
+async function nextQuestion() {
     stopAutoPlay(); // 用户手动操作时停止自动轮播
     
     // 立即执行，不等待异步操作
     const targetIndex = currentIndex < productImages.length - 1 ? currentIndex + 1 : 0;
     
-    // 直接调用，不使用 requestAnimationFrame，减少延迟
-        showProduct(targetIndex);
+    // 移动端：确保图片准备好后再切换
+    const isMobile = isMobileDevice();
+    if (isMobile) {
+        // 先预加载目标图片，确保切换前已准备好
+        const targetCard = document.querySelector(`[data-index="${targetIndex}"]`);
+        const targetImg = targetCard ? targetCard.querySelector('.product-image') : null;
+        
+        if (targetImg && !isImageLoaded(targetIndex)) {
+            // 图片未准备好，先预加载
+            if (targetImg.dataset.preloaded !== 'true') {
+                preloadImage(targetIndex);
+            }
+            
+            // 等待图片准备好（最多等待1秒）
+            await new Promise(resolve => {
+                const maxWait = 1000;
+                const startTime = Date.now();
+                const checkInterval = setInterval(() => {
+                    if (isImageLoaded(targetIndex) || Date.now() - startTime > maxWait) {
+                        clearInterval(checkInterval);
+                        resolve();
+                    }
+                }, 50);
+                setTimeout(() => {
+                    clearInterval(checkInterval);
+                    resolve();
+                }, maxWait);
+            });
+        }
+    }
+    
+    // 调用showProduct（移动端会再次确认图片已准备好）
+    showProduct(targetIndex);
 }
 
 // 更新进度条
