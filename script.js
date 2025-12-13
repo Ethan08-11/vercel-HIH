@@ -1076,10 +1076,10 @@ function createProductCard(item, index) {
     heartIcon.className = 'heart-icon';
     heartIcon.innerHTML = '<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path class="heart-path" d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" fill="white"/></svg>';
     
-    // 初始化该产品的爱心数量（如果还没有从服务器加载，使用随机初始值）
+    // 初始化该产品的爱心数量（使用2000-3000随机初始值，与服务器相互独立）
     if (heartCounts[index] === undefined) {
         const productId = item.id;
-        heartCounts[index] = getRandomInitialCount(productId); // 随机初始值，稍后会被服务器数据覆盖
+        heartCounts[index] = getRandomInitialCount(productId); // 本地随机初始值（2000-3000），与服务器独立
     }
     
     const heartCountDisplay = document.createElement('div');
@@ -1335,43 +1335,35 @@ async function loadHeartCountsFromServer() {
         console.log('服务器返回的数据:', result);
         
         if (result.success && result.heartCounts) {
-            // 更新所有产品的爱心数量（智能合并服务器数据）
+            // 本地和服务器相互独立：本地显示2000-3000随机初始值，服务器从2000开始
+            // 服务器值仅用于同步点击次数，不影响本地显示值
             productImages.forEach((item, index) => {
                 const productId = item.id;
                 const serverCount = result.heartCounts[productId];
                 
-                // 如果服务器有数据，优先使用服务器值（确保所有设备显示一致）
-                if (serverCount !== undefined) {
+                // 如果本地还没有初始化，使用随机初始值（2000-3000）
+                if (heartCounts[index] === undefined) {
+                    heartCounts[index] = getRandomInitialCount(productId);
+                    console.log(`产品 ${productId} 本地初始化: ${heartCounts[index]} (服务器: ${serverCount || '无'})`);
+                } else {
+                    // 本地已有值（可能是随机初始值或点击后的值）
                     const localCount = heartCounts[index];
                     const localUpdateTime = lastUpdateTime[index] || 0;
                     
-                    // 如果本地有用户点击的更新（5秒内），且本地值是基于服务器值的合理递增
-                    // 说明本地更新还未同步到服务器，保持本地值以提供即时反馈
+                    // 如果本地有用户点击的更新（5秒内），保持本地值
+                    // 本地值在随机初始值基础上递增，服务器值在2000基础上递增，二者相互独立
                     const timeSinceLocalUpdate = Date.now() - localUpdateTime;
-                    if (timeSinceLocalUpdate < 5000 && localCount !== undefined && localCount > serverCount) {
-                        // 检查本地值是否是合理的递增（服务器值 + 1, +2, +3...）
-                        // 如果本地值在合理范围内（服务器值 + 1 到 +10），说明是用户点击导致的，保持本地值
-                        const increment = localCount - serverCount;
-                        if (increment > 0 && increment <= 10) {
-                            // 本地值是基于服务器值的合理递增，保持本地值（等待服务器同步）
-                            console.log(`产品 ${productId} 保持本地最新值: ${localCount} (服务器: ${serverCount}, 增量: ${increment})`);
-                        } else {
-                            // 本地值异常（可能是随机初始值），使用服务器值确保一致性
-                            heartCounts[index] = serverCount;
-                            console.log(`产品 ${productId} 使用服务器值: ${serverCount} (本地值 ${localCount} 异常，重置为服务器值)`);
-                        }
+                    if (timeSinceLocalUpdate < 5000) {
+                        // 本地有最近的更新，保持本地值（本地和服务器相互独立）
+                        console.log(`产品 ${productId} 保持本地值: ${localCount} (服务器: ${serverCount || '无'})`);
                     } else {
-                        // 使用服务器值（确保所有设备显示一致）
-                        // 这是最重要的：服务器值是唯一真实来源，必须优先使用
-                        heartCounts[index] = serverCount;
+                        // 本地没有最近的更新，但保持本地值不变（本地和服务器相互独立）
+                        // 本地显示值始终基于随机初始值，不受服务器值影响
+                        console.log(`产品 ${productId} 本地值: ${localCount} (服务器: ${serverCount || '无'})`);
                     }
-                } else {
-                    // 如果服务器没有该产品的数据，使用随机初始值（仅用于显示，不影响服务器数据）
-                    heartCounts[index] = getRandomInitialCount(productId);
-                    console.warn(`产品 ${productId} 在服务器中没有数据，使用随机初始值 ${heartCounts[index]}`);
                 }
                 
-                // 更新显示
+                // 更新显示（始终显示本地值）
                 const countDisplay = document.querySelector(`.heart-count[data-product-index="${index}"]`);
                 if (countDisplay) {
                     countDisplay.textContent = formatNumber(heartCounts[index]);
