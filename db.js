@@ -657,6 +657,106 @@ async function recordHeartClick(productId, increment, userInfo = {}) {
     }
 }
 
+// 重置指定产品的服务器爱心数量为2000
+async function resetHeartCount(productId) {
+    // 确保数据库连接
+    let database = await connectDB();
+    if (!database) {
+        database = await connectDB();
+        if (!database) {
+            return null;
+        }
+    }
+
+    try {
+        const collection = database.collection('heartCounts');
+        
+        // 更新或创建文档，将count设置为2000
+        const result = await collection.updateOne(
+            { productId: productId },
+            {
+                $set: {
+                    count: 2000,
+                    updatedAt: new Date()
+                }
+            },
+            { upsert: true } // 如果不存在则创建
+        );
+        
+        if (result.modifiedCount === 1 || result.upsertedCount === 1) {
+            console.log(`✅ 产品 ${productId} 服务器爱心数量已重置为2000`);
+            return 2000;
+        } else {
+            console.warn(`⚠️ 产品 ${productId} 重置失败，可能已经是2000`);
+            return 2000;
+        }
+    } catch (error) {
+        console.error(`❌ 重置产品 ${productId} 爱心数量时出错:`, error);
+        throw error;
+    }
+}
+
+// 重置所有产品的服务器爱心数量为2000
+async function resetAllHeartCounts() {
+    // 确保数据库连接
+    let database = await connectDB();
+    if (!database) {
+        database = await connectDB();
+        if (!database) {
+            return null;
+        }
+    }
+
+    try {
+        const collection = database.collection('heartCounts');
+        
+        // 获取所有产品ID（1-63）
+        const allProductIds = Array.from({ length: 63 }, (_, i) => i + 1);
+        
+        console.log(`🔄 开始重置所有产品（共${allProductIds.length}个）的服务器爱心数量为2000...`);
+        
+        let successCount = 0;
+        let failCount = 0;
+        
+        // 批量更新所有产品
+        for (const productId of allProductIds) {
+            try {
+                const result = await collection.updateOne(
+                    { productId: productId },
+                    {
+                        $set: {
+                            count: 2000,
+                            updatedAt: new Date()
+                        }
+                    },
+                    { upsert: true } // 如果不存在则创建
+                );
+                
+                if (result.modifiedCount === 1 || result.upsertedCount === 1) {
+                    successCount++;
+                } else {
+                    // 可能已经是2000，也算成功
+                    successCount++;
+                }
+            } catch (error) {
+                console.error(`❌ 重置产品 ${productId} 时出错:`, error);
+                failCount++;
+            }
+        }
+        
+        console.log(`✅ 重置完成：成功 ${successCount} 个，失败 ${failCount} 个`);
+        return {
+            success: true,
+            total: allProductIds.length,
+            successCount: successCount,
+            failCount: failCount
+        };
+    } catch (error) {
+        console.error(`❌ 重置所有产品爱心数量时出错:`, error);
+        throw error;
+    }
+}
+
 module.exports = {
     connectDB,
     disconnectDB,
@@ -667,6 +767,8 @@ module.exports = {
     updateHeartCount,
     initHeartCounts,
     recordHeartClick,
-    getRandomInitialCount
+    getRandomInitialCount,
+    resetHeartCount,
+    resetAllHeartCounts
 };
 
