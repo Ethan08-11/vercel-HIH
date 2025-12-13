@@ -466,24 +466,24 @@ async function updateHeartCount(productId, increment, userInfo = {}) {
             if (currentCount === 2000) {
                 // 初始值2000，从2000开始递增
                 baseCount = 2000;
-            } else if (currentCount > 2000 && currentCount <= 2500) {
-                // 2001-2500之间：可能是用户点击后的值（2001, 2002...）或旧随机初始值
+            } else if (currentCount > 2000 && currentCount <= 3000) {
+                // 2001-3000之间：可能是用户点击后的值（2001, 2002...）或旧随机初始值
                 // 如果值在2001-2050之间，很可能是用户点击后的值，保持原值继续递增
-                // 如果值在2051-2500之间，很可能是旧随机初始值，重置为2000
+                // 如果值在2051-3000之间，可能是旧随机初始值或用户点击后的值，为了安全起见保持原值继续递增
+                // （支持客户端2000-3000的随机范围）
                 if (currentCount <= 2050) {
                     // 很可能是用户点击后的值，保持原值继续递增
                     baseCount = currentCount;
                 } else {
-                    // 很可能是旧随机初始值，重置为2000
-                    baseCount = 2000;
-                    console.log(`🔄 产品 ${productId} 当前值 ${currentCount} 是旧随机初始值，重置为2000`);
+                    // 2051-3000之间，可能是旧随机初始值，但为了支持客户端的新范围，保持原值继续递增
+                    baseCount = currentCount;
                 }
             } else if (currentCount < 2000) {
                 // 小于2000的异常值，重置为2000
                 baseCount = 2000;
                 console.log(`🔄 产品 ${productId} 当前值 ${currentCount} 异常，重置为2000`);
             } else {
-                // 大于2500的值，说明用户已经点击了很多次，保持原值继续递增
+                // 大于3000的值，说明用户已经点击了很多次，保持原值继续递增
                 baseCount = currentCount;
             }
             
@@ -507,7 +507,7 @@ async function updateHeartCount(productId, increment, userInfo = {}) {
                 const updated = await collection.findOne({ productId: productId });
                 newCount = updated ? updated.count : null;
                 if (newCount !== null) {
-                    console.log(`✅ 产品 ${productId} 爱心数量已更新: ${currentCount <= 2500 ? `重置为2000后` : ''}${increment > 0 ? '+' : ''}${increment}, 新数量: ${newCount}`);
+                    console.log(`✅ 产品 ${productId} 爱心数量已更新: ${increment > 0 ? '+' : ''}${increment}, 新数量: ${newCount}`);
                 } else {
                     throw new Error('更新后无法获取新数量');
                 }
@@ -528,7 +528,7 @@ async function updateHeartCount(productId, increment, userInfo = {}) {
                 
                 if (result && result.value) {
                     newCount = result.value.count;
-                    console.log(`✅ 产品 ${productId} 爱心数量已更新（备用方法）: ${currentCount <= 2500 ? `重置为2000后` : ''}${increment > 0 ? '+' : ''}${increment}, 新数量: ${newCount}`);
+                    console.log(`✅ 产品 ${productId} 爱心数量已更新（备用方法）: ${increment > 0 ? '+' : ''}${increment}, 新数量: ${newCount}`);
                 } else {
                     throw new Error('所有更新方法都失败');
                 }
@@ -583,19 +583,11 @@ async function initHeartCounts(productIds) {
                 });
                 console.log(`✅ 产品 ${productId} 爱心数量已初始化: ${initialCount}`);
             } else {
-                // 如果已存在，检查是否为初始值（<=2500），如果是则重置为2000
+                // 如果已存在，检查是否为初始值（2000），如果是则保持不变
+                // 如果值大于2000，说明用户已点击，保持不变
                 const currentCount = existing.count;
-                if (currentCount <= 2500) {
-                    await collection.updateOne(
-                        { productId: productId },
-                        { 
-                            $set: { 
-                                count: 2000,
-                                updatedAt: new Date() 
-                            }
-                        }
-                    );
-                    console.log(`🔄 产品 ${productId} 爱心数量已重置: ${currentCount} -> 2000`);
+                if (currentCount === 2000) {
+                    console.log(`ℹ️ 产品 ${productId} 爱心数量已存在（初始值）: ${currentCount}`);
                 } else {
                     console.log(`ℹ️ 产品 ${productId} 爱心数量已存在（用户已点击）: ${existing.count}`);
                 }

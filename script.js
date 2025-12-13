@@ -459,11 +459,11 @@ function getRandomInitialCount(productId) {
     const seed = productId * 12345 + 67890;
     const random = Math.sin(seed) * 10000;
     const normalized = (random - Math.floor(random));
-    // 生成2000-2500之间的随机数
-    return Math.floor(2000 + normalized * 500);
+    // 生成2000-3000之间的随机数
+    return Math.floor(2000 + normalized * 1000);
 }
 
-let heartCounts = {}; // 每个产品的爱心数量，初始值为随机值（2000-2500）
+let heartCounts = {}; // 每个产品的爱心数量，初始值为随机值（2000-3000）
 let productJumpTimers = {}; // 存储每个产品的跳转定时器
 let pendingHeartUpdates = {}; // 存储待处理的爱心更新队列 { productIndex: pendingIncrement }
 let updateLocks = {}; // 防止并发更新的锁 { productIndex: isUpdating }
@@ -1212,21 +1212,21 @@ async function updateHeartCount(productIndex, increment) {
                 
                 const result = await response.json();
                 
-                // 如果服务器返回了count值
+                // 如果服务器返回了count值，始终使用服务器值以确保数据一致性
                 if (result.count !== undefined) {
                     const currentLocalCount = heartCounts[productIndex];
                     const serverCount = result.count;
                     
-                    // 如果服务器返回的值大于或等于本地值，说明服务器已经成功保存了我们的更新（可能还有其他用户的更新）
-                    // 使用服务器值以确保数据一致性
-                    if (serverCount >= currentLocalCount) {
-                        // 服务器值更新或相同，使用服务器值（可能包含了其他用户的点赞）
-                        updateHeartCountDisplay(productIndex, serverCount);
-                    }
-                    // 如果服务器值小于本地值，可能是服务器数据滞后，保持本地值
+                    // 始终使用服务器返回的值，确保本地与服务器保持一致
+                    // 这样可以避免本地和服务器数据不一致的问题
+                    updateHeartCountDisplay(productIndex, serverCount);
                     
                     if (result.success) {
-                        console.log(`✅ 产品 ${productId} 爱心数量已保存到服务器: ${serverCount} (本地: ${currentLocalCount})`);
+                        if (serverCount === currentLocalCount) {
+                            console.log(`✅ 产品 ${productId} 爱心数量已保存到服务器: ${serverCount} (本地: ${currentLocalCount})`);
+                        } else {
+                            console.log(`✅ 产品 ${productId} 爱心数量已保存到服务器: ${serverCount} (本地已同步: ${currentLocalCount} -> ${serverCount})`);
+                        }
                     } else {
                         console.warn(`⚠️ 产品 ${productId} 更新失败，但使用服务器返回的值: ${serverCount}`);
                     }
