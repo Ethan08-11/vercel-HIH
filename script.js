@@ -464,7 +464,6 @@ function getRandomInitialCount(productId) {
 }
 
 let heartCounts = {}; // 每个产品的爱心数量，初始值为随机值（2000-3000）
-// 注意：移动端和电脑端各自维护独立的本地值（通过localStorage），互不影响
 let productJumpTimers = {}; // 存储每个产品的跳转定时器
 let pendingHeartUpdates = {}; // 存储待处理的爱心更新队列 { productIndex: pendingIncrement }
 let updateLocks = {}; // 防止并发更新的锁 { productIndex: isUpdating }
@@ -480,7 +479,6 @@ const STORAGE_KEY_HEART_COUNTS = 'questionnaire_heart_counts';
 const STORAGE_KEY_LAST_UPDATE_TIME = 'questionnaire_last_update_time';
 
 // 从 localStorage 加载本地爱心数量
-// 注意：localStorage是设备独立的，移动端和电脑端各自维护自己的本地值，互不影响
 function loadHeartCountsFromStorage() {
     try {
         const stored = localStorage.getItem(STORAGE_KEY_HEART_COUNTS);
@@ -488,7 +486,7 @@ function loadHeartCountsFromStorage() {
         
         if (stored) {
             const parsed = JSON.parse(stored);
-            // 恢复 heartCounts（设备独立的本地值）
+            // 恢复 heartCounts
             Object.keys(parsed).forEach(index => {
                 const numIndex = parseInt(index);
                 if (!isNaN(numIndex) && parsed[index] !== undefined && parsed[index] !== null) {
@@ -507,7 +505,7 @@ function loadHeartCountsFromStorage() {
                 });
             }
             
-            console.log('✅ 从 localStorage 恢复本地爱心数量 (设备独立):', heartCounts);
+            console.log('✅ 从 localStorage 恢复本地爱心数量:', heartCounts);
             return true;
         }
     } catch (error) {
@@ -517,7 +515,6 @@ function loadHeartCountsFromStorage() {
 }
 
 // 保存本地爱心数量到 localStorage
-// 注意：每个设备（移动端/电脑端）独立保存，互不影响
 function saveHeartCountsToStorage() {
     try {
         localStorage.setItem(STORAGE_KEY_HEART_COUNTS, JSON.stringify(heartCounts));
@@ -694,8 +691,7 @@ async function initQuestionnaire() {
     }
     
     // 首先从 localStorage 恢复本地爱心数量（防止页面刷新后重置）
-    // 注意：localStorage是设备独立的，移动端和电脑端各自维护自己的本地值，互不影响
-    console.log('从 localStorage 恢复本地爱心数量 (设备独立)...');
+    console.log('从 localStorage 恢复本地爱心数量...');
     loadHeartCountsFromStorage();
     
     // 移动端：初始化图片缓存（提前加载并缓存图片）
@@ -708,10 +704,7 @@ async function initQuestionnaire() {
     }
     
     // 先尝试从服务器加载爱心数量（如果失败，使用默认值）
-    // 注意：
-    // 1. 服务器值不影响本地显示，本地值已从 localStorage 恢复（设备独立）
-    // 2. 移动端和电脑端各自维护独立的本地值，互不影响
-    // 3. 服务器值用于同步点击次数，但显示时使用各自的本地值
+    // 注意：服务器值不影响本地显示，本地值已从 localStorage 恢复
     console.log('开始从服务器加载爱心数量...');
     await loadHeartCountsFromServer();
     
@@ -764,9 +757,7 @@ async function initQuestionnaire() {
         }, 50);
     });
     
-    // 定期从服务器同步爱心数量（每5秒）
-    // 注意：移动端和电脑端各自维护独立的本地值（通过localStorage），互不影响
-    // 服务器值用于同步点击次数，但不影响本地显示值
+    // 定期从服务器同步爱心数量（每5秒，确保移动端和电脑端实时同步）
     setInterval(async () => {
         await loadHeartCountsFromServer();
     }, 5000);
@@ -1217,6 +1208,12 @@ function updateHeartCountDisplay(productIndex, count) {
     heartCounts[productIndex] = count;
     lastUpdateTime[productIndex] = Date.now(); // 记录更新时间
     
+    // 保存到 localStorage（持久化存储，防止页面刷新后重置）
+    saveHeartCountsToStorage();
+    
+    // 同步本地爱心数量到服务器（用于跨设备同步）
+    syncLocalHeartCountToServer(productIndex, count);
+    
     // 更新该产品的爱心数量显示
     const countDisplay = document.querySelector(`.heart-count[data-product-index="${productIndex}"]`);
     if (countDisplay) {
@@ -1230,6 +1227,91 @@ function updateHeartCountDisplay(productIndex, count) {
         setTimeout(() => {
             countDisplay.classList.remove('updating');
         }, 300);
+    }
+}
+
+// 同步单个产品的本地爱心数量到服务器（用于跨设备同步）
+async function syncLocalHeartCountToServer(productIndex, count) {
+    try {
+        const productId = productImages[productIndex].id;
+        const API_BASE_URL = window.API_BASE_URL || window.location.origin;
+        
+        // 使用防抖，避免频繁请求
+        if (!window._localSyncLocks) {
+            window._localSyncLocks = {};
+        }
+        
+        if (window._localSyncLocks[productIndex]) {
+            clearTimeout(window._localSyncLocks[productIndex]);
+        }
+        
+        window._localSyncLocks[productIndex] = setTimeout(async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/local-heart-count`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        productId: productId,
+                        count: count
+                    })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    // 同步成功，静默处理（避免过多日志）
+                } else {
+                    console.warn(`⚠️ 产品 ${productId} 本地爱心数量同步失败:`, result.message);
+                }
+            } catch (error) {
+                // 静默处理错误，不影响用户体验
+                console.warn(`⚠️ 产品 ${productId} 本地爱心数量同步失败:`, error.message);
+            }
+            delete window._localSyncLocks[productIndex];
+        }, 500); // 500ms防抖延迟
+    } catch (error) {
+        // 静默处理错误
+        console.warn(`⚠️ 同步本地爱心数量失败:`, error.message);
+    }
+}
+
+// 批量同步所有产品的本地爱心数量到服务器（用于跨设备同步）
+async function syncLocalHeartCountsToServer() {
+    try {
+        const API_BASE_URL = window.API_BASE_URL || window.location.origin;
+        
+        // 构建要同步的数据（只同步有值的产品）
+        const localCountsToSync = {};
+        productImages.forEach((item, index) => {
+            if (heartCounts[index] !== undefined && heartCounts[index] !== null) {
+                localCountsToSync[item.id] = heartCounts[index];
+            }
+        });
+        
+        if (Object.keys(localCountsToSync).length === 0) {
+            return; // 没有数据需要同步
+        }
+        
+        const response = await fetch(`${API_BASE_URL}/api/local-heart-counts`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                localHeartCounts: localCountsToSync
+            })
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            console.log(`✅ 本地爱心数量已同步到服务器: ${result.successCount}/${result.total} 个产品`);
+        } else {
+            console.warn(`⚠️ 本地爱心数量同步失败:`, result.message);
+        }
+    } catch (error) {
+        // 静默处理错误，不影响用户体验
+        console.warn(`⚠️ 批量同步本地爱心数量失败:`, error.message);
     }
 }
 
@@ -1325,11 +1407,10 @@ async function updateHeartCount(productIndex, increment) {
                     // 服务器返回的值只用于确认更新成功，不影响本地显示
                     if (result.success) {
                         console.log(`✅ 产品 ${productId} 爱心数量已保存到服务器: ${serverCount} (本地: ${currentLocalCount}, 服务器独立递增)`);
-                            // 更新成功后，延迟1秒触发一次同步
-                            // 注意：移动端和电脑端各自维护独立的本地值，服务器值同步但不影响本地显示
-                            setTimeout(async () => {
-                                await loadHeartCountsFromServer();
-                            }, 1000);
+                        // 更新成功后，延迟1秒触发一次同步，确保移动端和电脑端实时同步
+                        setTimeout(async () => {
+                            await loadHeartCountsFromServer();
+                        }, 1000);
                     } else {
                         console.warn(`⚠️ 产品 ${productId} 更新失败，服务器返回: ${serverCount}`);
                     }
@@ -1418,55 +1499,75 @@ async function loadHeartCountsFromServer() {
             // 本地和服务器相互独立：本地显示2000-3000随机初始值，服务器从2000开始
             // 服务器值仅用于同步点击次数，不影响本地显示值
             // 重要：localStorage中的值优先级最高，不会被覆盖
-            // 移动端和电脑端各自维护独立的本地值（通过localStorage），互不影响
             productImages.forEach((item, index) => {
                 const productId = item.id;
                 const serverCount = result.heartCounts[productId];
                 
-                // 始终优先使用localStorage中的值（每个设备独立）
-                // 如果本地还没有值，尝试从localStorage恢复（可能在服务器加载前未恢复）
+                // 优先级：服务器端的本地爱心数量（跨设备同步）> localStorage > 随机初始值
+                const serverLocalCount = result.localHeartCounts?.[productId];
+                
                 if (heartCounts[index] === undefined) {
-                    // 再次尝试从localStorage恢复（防止时序问题）
-                    const stored = localStorage.getItem(STORAGE_KEY_HEART_COUNTS);
-                    if (stored) {
-                        try {
-                            const parsed = JSON.parse(stored);
-                            if (parsed[index] !== undefined && parsed[index] !== null) {
-                                heartCounts[index] = parsed[index];
-                                console.log(`产品 ${productId} 从localStorage恢复: ${heartCounts[index]} (服务器: ${serverCount || '无'})`);
+                    // 1. 优先使用服务器端的本地爱心数量（跨设备同步）
+                    if (serverLocalCount !== undefined && serverLocalCount !== null) {
+                        heartCounts[index] = serverLocalCount;
+                        console.log(`产品 ${productId} 从服务器恢复本地值: ${heartCounts[index]} (服务器: ${serverCount || '无'})`);
+                    } else {
+                        // 2. 尝试从localStorage恢复
+                        const stored = localStorage.getItem(STORAGE_KEY_HEART_COUNTS);
+                        if (stored) {
+                            try {
+                                const parsed = JSON.parse(stored);
+                                if (parsed[index] !== undefined && parsed[index] !== null) {
+                                    heartCounts[index] = parsed[index];
+                                    console.log(`产品 ${productId} 从localStorage恢复: ${heartCounts[index]} (服务器: ${serverCount || '无'})`);
+                                }
+                            } catch (e) {
+                                console.warn(`产品 ${productId} 从localStorage恢复失败:`, e);
                             }
-                        } catch (e) {
-                            console.warn(`产品 ${productId} 从localStorage恢复失败:`, e);
+                        }
+                        
+                        // 3. 如果都没有，使用随机初始值（2000-3000）
+                        if (heartCounts[index] === undefined) {
+                            heartCounts[index] = getRandomInitialCount(productId);
+                            console.log(`产品 ${productId} 本地初始化: ${heartCounts[index]} (服务器: ${serverCount || '无'})`);
                         }
                     }
                     
-                    // 如果localStorage中也没有，使用随机初始值（2000-3000）
-                    // 每个设备会有不同的随机初始值，这是正常的
-                    if (heartCounts[index] === undefined) {
-                        heartCounts[index] = getRandomInitialCount(productId);
-                        // 保存初始值到 localStorage（设备独立存储）
-                        saveHeartCountsToStorage();
-                        console.log(`产品 ${productId} 本地初始化: ${heartCounts[index]} (服务器: ${serverCount || '无'})`);
-                    }
+                    // 保存到localStorage
+                    saveHeartCountsToStorage();
                 } else {
-                    // 本地已有值（从localStorage恢复或之前设置的），保持不变
-                    // 这是关键：本地值不会被服务器值覆盖，每个设备维护自己的本地值
-                    const localCount = heartCounts[index];
-                    console.log(`产品 ${productId} 保持本地值: ${localCount} (服务器: ${serverCount || '无'}, 设备独立)`);
+                    // 本地已有值，与服务器端的本地值同步（取较大值，确保不丢失数据）
+                    if (serverLocalCount !== undefined && serverLocalCount !== null) {
+                        if (serverLocalCount > heartCounts[index]) {
+                            // 服务器端的本地值更大，使用服务器端的值（其他设备有更新）
+                            heartCounts[index] = serverLocalCount;
+                            console.log(`产品 ${productId} 同步服务器本地值: ${heartCounts[index]} (服务器: ${serverCount || '无'})`);
+                            saveHeartCountsToStorage();
+                        } else {
+                            // 本地值更大或相等，保持本地值
+                            console.log(`产品 ${productId} 保持本地值: ${heartCounts[index]} (服务器本地: ${serverLocalCount || '无'}, 服务器: ${serverCount || '无'})`);
+                        }
+                    } else {
+                        console.log(`产品 ${productId} 保持本地值: ${heartCounts[index]} (服务器: ${serverCount || '无'})`);
+                    }
                 }
                 
-                // 更新显示（始终显示本地值，每个设备显示自己的值）
+                // 更新显示（始终显示本地值）
                 const countDisplay = document.querySelector(`.heart-count[data-product-index="${index}"]`);
                 if (countDisplay) {
                     countDisplay.textContent = formatNumber(heartCounts[index]);
                 }
             });
             
-            // 确保所有值都保存到localStorage（防止丢失，每个设备独立保存）
+            // 确保所有值都保存到localStorage（防止丢失）
             saveHeartCountsToStorage();
             
+            // 同步本地爱心数量到服务器（用于跨设备同步）
+            syncLocalHeartCountsToServer();
+            
             console.log('✅ 爱心数量已从服务器加载:', result.heartCounts);
-            console.log('本地heartCounts (设备独立):', heartCounts);
+            console.log('✅ 本地爱心数量已从服务器恢复:', result.localHeartCounts);
+            console.log('本地heartCounts:', heartCounts);
         } else {
             // 即使success为false，如果包含heartCounts字段，也尝试使用
             if (result.heartCounts && typeof result.heartCounts === 'object') {
@@ -1477,33 +1578,50 @@ async function loadHeartCountsFromServer() {
                 productImages.forEach((item, index) => {
                     const productId = item.id;
                     // 本地和服务器相互独立，保持本地值不变
-                    // 优先使用localStorage中的值
+                    // 优先使用服务器端的本地爱心数量，其次使用localStorage，最后使用随机初始值
+                    const serverLocalCount = result.localHeartCounts?.[productId];
+                    
                     if (heartCounts[index] === undefined) {
-                        // 尝试从localStorage恢复
-                        const stored = localStorage.getItem(STORAGE_KEY_HEART_COUNTS);
-                        if (stored) {
-                            try {
-                                const parsed = JSON.parse(stored);
-                                if (parsed[index] !== undefined && parsed[index] !== null) {
-                                    heartCounts[index] = parsed[index];
+                        // 1. 优先使用服务器端的本地爱心数量
+                        if (serverLocalCount !== undefined && serverLocalCount !== null) {
+                            heartCounts[index] = serverLocalCount;
+                        } else {
+                            // 2. 尝试从localStorage恢复
+                            const stored = localStorage.getItem(STORAGE_KEY_HEART_COUNTS);
+                            if (stored) {
+                                try {
+                                    const parsed = JSON.parse(stored);
+                                    if (parsed[index] !== undefined && parsed[index] !== null) {
+                                        heartCounts[index] = parsed[index];
+                                    }
+                                } catch (e) {
+                                    console.warn(`产品 ${productId} 从localStorage恢复失败:`, e);
                                 }
-                            } catch (e) {
-                                console.warn(`产品 ${productId} 从localStorage恢复失败:`, e);
+                            }
+                            
+                            // 3. 如果都没有，使用随机初始值
+                            if (heartCounts[index] === undefined) {
+                                heartCounts[index] = getRandomInitialCount(productId);
+                                saveHeartCountsToStorage();
                             }
                         }
-                        
-                        // 如果localStorage中也没有，使用随机初始值
-                        if (heartCounts[index] === undefined) {
-                            heartCounts[index] = getRandomInitialCount(productId);
+                    } else if (serverLocalCount !== undefined && serverLocalCount !== null) {
+                        // 本地已有值，与服务器端的本地值同步（取较大值）
+                        if (serverLocalCount > heartCounts[index]) {
+                            heartCounts[index] = serverLocalCount;
                             saveHeartCountsToStorage();
                         }
                     }
+                    
                     // 更新显示（始终显示本地值）
                     const countDisplay = document.querySelector(`.heart-count[data-product-index="${index}"]`);
                     if (countDisplay) {
                         countDisplay.textContent = formatNumber(heartCounts[index]);
                     }
                 });
+                
+                // 同步本地爱心数量到服务器
+                syncLocalHeartCountsToServer();
             } else {
                 // 如果服务器返回失败且没有heartCounts，保持现有数据，不重置
                 console.warn('⚠️ 服务器返回失败且无heartCounts数据，保持现有数据');

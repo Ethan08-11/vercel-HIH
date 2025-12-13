@@ -72,6 +72,17 @@ function getRandomInitialCount(productId) {
     return 2000;
 }
 
+// 获取产品的本地爱心数量初始值（2000-3000随机，与客户端算法一致）
+function getLocalRandomInitialCount(productId) {
+    // 使用与客户端相同的算法，生成2000-3000之间的随机数
+    // 这样不同设备首次访问时会看到相同的初始值
+    const seed = productId * 12345 + 67890;
+    const random = Math.sin(seed) * 10000;
+    const normalized = (random - Math.floor(random));
+    // 生成2000-3000之间的随机数
+    return Math.floor(2000 + normalized * 1000);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -677,12 +688,16 @@ app.get('/api/heart-counts', async (req, res) => {
                 // 连接失败时返回默认值，但返回success:true，让前端能正常使用
                 const allProductIds = Array.from({ length: 63 }, (_, i) => i + 1);
                 const defaultCounts = {};
+                const defaultLocalCounts = {};
                 allProductIds.forEach(productId => {
                     defaultCounts[productId] = getRandomInitialCount(productId);
+                    // 本地爱心数量使用随机初始值（2000-3000），与客户端算法一致
+                    defaultLocalCounts[productId] = getLocalRandomInitialCount(productId);
                 });
                 return res.json({
                     success: true, // 改为true，让前端能正常使用
                     heartCounts: defaultCounts,
+                    localHeartCounts: defaultLocalCounts,
                     message: '数据库连接失败，返回默认值（数据仅本地有效）',
                     databaseAvailable: false // 标记数据库不可用
                 });
@@ -729,10 +744,15 @@ app.get('/api/heart-counts', async (req, res) => {
                 }
             });
             
-            console.log('✅ 返回爱心数量:', result);
+            // 同时获取本地爱心数量（用于跨设备同步）
+            const localCounts = await db.getLocalHeartCounts();
+            console.log('✅ 返回服务器爱心数量:', result);
+            console.log('✅ 返回本地爱心数量:', localCounts);
+            
             return res.json({
                 success: true,
-                heartCounts: result
+                heartCounts: result, // 服务器爱心数量
+                localHeartCounts: localCounts // 本地爱心数量（用于跨设备同步）
             });
         }
         
@@ -740,13 +760,17 @@ app.get('/api/heart-counts', async (req, res) => {
         console.warn('⚠️ MongoDB未配置，返回随机初始爱心数量');
         const allProductIds = Array.from({ length: 63 }, (_, i) => i + 1);
         const defaultCounts = {};
+        const defaultLocalCounts = {};
         allProductIds.forEach(productId => {
             defaultCounts[productId] = getRandomInitialCount(productId);
+            // 本地爱心数量使用随机初始值（2000-3000）
+            defaultLocalCounts[productId] = getRandomInitialCount(productId);
         });
         
         res.json({
             success: true,
             heartCounts: defaultCounts,
+            localHeartCounts: defaultLocalCounts,
             message: '数据库未配置，返回默认值'
         });
     } catch (error) {
@@ -758,10 +782,17 @@ app.get('/api/heart-counts', async (req, res) => {
         allProductIds.forEach(productId => {
             defaultCounts[productId] = getRandomInitialCount(productId);
         });
+        // 生成默认本地爱心数量（2000-3000随机，与客户端算法一致）
+        const defaultLocalCounts = {};
+        allProductIds.forEach(productId => {
+            defaultLocalCounts[productId] = getLocalRandomInitialCount(productId);
+        });
+        
         res.status(500).json({
             success: false,
             message: '服务器错误：' + error.message,
-            heartCounts: defaultCounts // 返回默认值而不是空对象
+            heartCounts: defaultCounts, // 返回默认值而不是空对象
+            localHeartCounts: defaultLocalCounts
         });
     }
 });
@@ -1011,6 +1042,145 @@ app.post('/api/reset-all-heart-counts', async (req, res) => {
         });
     } catch (error) {
         console.error('❌ 重置所有产品爱心数量时出错:', error);
+        res.status(500).json({
+            success: false,
+            message: '服务器错误：' + error.message
+        });
+    }
+});
+
+// 更新本地爱心数量（用于跨设备同步）
+app.post('/api/local-heart-count', async (req, res) => {
+    try {
+        const { productId, count } = req.body;
+        
+        if (productId === undefined || count === undefined) {
+            return res.status(400).json({
+                success: false,
+                message: '缺少必要参数：productId 和 count'
+            });
+        }
+        
+        const mongoUri = process.env.MONGODB_URI;
+        const useDatabase = !!mongoUri;
+        
+        console.log(`📝 更新产品 ${productId} 本地爱心数量: ${count}`);
+        
+        if (useDatabase) {
+            const dbConnection = await db.connectDB();
+            
+            if (!dbConnection) {
+                console.warn('⚠️ 数据库连接失败，无法同步本地爱心数量');
+                return res.status(503).json({
+                    success: false,
+                    message: '数据库连接失败，无法同步',
+                    productId: parseInt(productId)
+                });
+            }
+            
+            try {
+                const newCount = await db.updateLocalHeartCount(parseInt(productId), parseInt(count));
+                
+                if (newCount !== null && newCount !== undefined) {
+                    return res.json({
+                        success: true,
+                        productId: parseInt(productId),
+                        count: newCount,
+                        message: '本地爱心数量已同步到服务器'
+                    });
+                } else {
+                    return res.status(500).json({
+                        success: false,
+                        message: '更新失败：返回值为null',
+                        productId: parseInt(productId)
+                    });
+                }
+            } catch (dbError) {
+                console.error(`❌ 更新本地爱心数量异常:`, dbError);
+                return res.status(500).json({
+                    success: false,
+                    message: '更新异常：' + dbError.message,
+                    productId: parseInt(productId)
+                });
+            }
+        }
+        
+        res.json({
+            success: false,
+            productId: parseInt(productId),
+            message: '数据库未配置，无法同步',
+            databaseAvailable: false
+        });
+    } catch (error) {
+        console.error('❌ 更新本地爱心数量时出错:', error);
+        res.status(500).json({
+            success: false,
+            message: '服务器错误：' + error.message
+        });
+    }
+});
+
+// 批量更新所有产品的本地爱心数量（用于跨设备同步）
+app.post('/api/local-heart-counts', async (req, res) => {
+    try {
+        const { localHeartCounts } = req.body;
+        
+        if (!localHeartCounts || typeof localHeartCounts !== 'object') {
+            return res.status(400).json({
+                success: false,
+                message: '缺少必要参数：localHeartCounts（对象）'
+            });
+        }
+        
+        const mongoUri = process.env.MONGODB_URI;
+        const useDatabase = !!mongoUri;
+        
+        console.log(`📝 批量更新本地爱心数量，产品数量: ${Object.keys(localHeartCounts).length}`);
+        
+        if (useDatabase) {
+            const dbConnection = await db.connectDB();
+            
+            if (!dbConnection) {
+                console.warn('⚠️ 数据库连接失败，无法同步本地爱心数量');
+                return res.status(503).json({
+                    success: false,
+                    message: '数据库连接失败，无法同步'
+                });
+            }
+            
+            try {
+                const result = await db.updateAllLocalHeartCounts(localHeartCounts);
+                
+                if (result.success) {
+                    return res.json({
+                        success: true,
+                        message: `本地爱心数量已同步到服务器（${result.successCount}/${result.total}）`,
+                        total: result.total,
+                        successCount: result.successCount,
+                        failCount: result.failCount
+                    });
+                } else {
+                    return res.status(500).json({
+                        success: false,
+                        message: result.message || '批量更新失败'
+                    });
+                }
+            } catch (dbError) {
+                console.error(`❌ 批量更新本地爱心数量异常:`, dbError);
+                return res.status(500).json({
+                    success: false,
+                    message: '更新异常：' + dbError.message
+                });
+            }
+        }
+        
+        res.json({
+            success: false,
+            message: '数据库未配置，无法同步',
+            databaseAvailable: false
+        });
+    } catch (error) {
+        console.error('❌ 批量更新本地爱心数量时出错:', error);
         res.status(500).json({
             success: false,
             message: '服务器错误：' + error.message

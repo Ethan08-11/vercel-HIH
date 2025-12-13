@@ -757,6 +757,119 @@ async function resetAllHeartCounts() {
     }
 }
 
+// 获取所有产品的本地爱心数量（用于跨设备同步）
+async function getLocalHeartCounts() {
+    let database = await connectDB();
+    if (!database) {
+        database = await connectDB();
+        if (!database) {
+            return {};
+        }
+    }
+
+    try {
+        const collection = database.collection('localHeartCounts');
+        const counts = await collection.find({}).toArray();
+        const result = {};
+        counts.forEach(item => {
+            result[item.productId] = item.count;
+        });
+        console.log(`从数据库获取到 ${Object.keys(result).length} 个产品的本地爱心数量:`, result);
+        return result;
+    } catch (error) {
+        console.error('获取本地爱心数量时出错:', error);
+        return {};
+    }
+}
+
+// 更新产品的本地爱心数量（用于跨设备同步）
+async function updateLocalHeartCount(productId, count) {
+    let database = await connectDB();
+    if (!database) {
+        database = await connectDB();
+        if (!database) {
+            return null;
+        }
+    }
+
+    try {
+        const collection = database.collection('localHeartCounts');
+        
+        // 更新或创建文档
+        const result = await collection.updateOne(
+            { productId: productId },
+            {
+                $set: {
+                    count: count,
+                    updatedAt: new Date()
+                }
+            },
+            { upsert: true } // 如果不存在则创建
+        );
+        
+        if (result.modifiedCount === 1 || result.upsertedCount === 1) {
+            console.log(`✅ 产品 ${productId} 本地爱心数量已同步到服务器: ${count}`);
+            return count;
+        } else {
+            // 可能值没有变化，返回当前值
+            const existing = await collection.findOne({ productId: productId });
+            return existing ? existing.count : count;
+        }
+    } catch (error) {
+        console.error(`❌ 更新产品 ${productId} 本地爱心数量时出错:`, error);
+        throw error;
+    }
+}
+
+// 批量更新所有产品的本地爱心数量
+async function updateAllLocalHeartCounts(localCounts) {
+    let database = await connectDB();
+    if (!database) {
+        database = await connectDB();
+        if (!database) {
+            return { success: false, message: '数据库连接失败' };
+        }
+    }
+
+    try {
+        const collection = database.collection('localHeartCounts');
+        let successCount = 0;
+        let failCount = 0;
+        
+        for (const [productIdStr, count] of Object.entries(localCounts)) {
+            try {
+                const productId = parseInt(productIdStr);
+                if (isNaN(productId)) continue;
+                
+                await collection.updateOne(
+                    { productId: productId },
+                    {
+                        $set: {
+                            count: count,
+                            updatedAt: new Date()
+                        }
+                    },
+                    { upsert: true }
+                );
+                successCount++;
+            } catch (error) {
+                console.error(`更新产品 ${productIdStr} 失败:`, error);
+                failCount++;
+            }
+        }
+        
+        return {
+            success: true,
+            total: Object.keys(localCounts).length,
+            successCount: successCount,
+            failCount: failCount
+        };
+    } catch (error) {
+        console.error('批量更新本地爱心数量时出错:', error);
+        throw error;
+    }
+}
+
 module.exports = {
     connectDB,
     disconnectDB,
@@ -769,6 +882,9 @@ module.exports = {
     recordHeartClick,
     getRandomInitialCount,
     resetHeartCount,
-    resetAllHeartCounts
+    resetAllHeartCounts,
+    getLocalHeartCounts,
+    updateLocalHeartCount,
+    updateAllLocalHeartCounts
 };
 
