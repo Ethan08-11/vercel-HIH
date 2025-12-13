@@ -36,109 +36,17 @@ async function syncData() {
         process.exit(1);
     }
 
-    // 验证连接字符串格式
+    // 简单验证连接字符串格式（仅检查基本格式）
     console.log('🔍 验证连接字符串格式...');
     
-    // 检查常见错误
-    const issues = [];
-    
-    // 提取主机名进行更精确的检查
-    let detectedHostname = '';
-    try {
-        const uriForParsing = MONGODB_URI.replace(/^mongodb\+srv:\/\//, 'https://').replace(/^mongodb:\/\//, 'http://');
-        const url = new URL(uriForParsing);
-        detectedHostname = url.hostname;
-    } catch (e) {
-        // 如果无法解析，使用字符串匹配
+    // 基本格式检查
+    if (!MONGODB_URI.startsWith('mongodb://') && !MONGODB_URI.startsWith('mongodb+srv://')) {
+        console.error('❌ 连接字符串格式错误：应以 mongodb:// 或 mongodb+srv:// 开头');
+        process.exit(1);
     }
     
-    // 检查主机名拼写错误（多种可能的拼写错误）
-    const hostnamePatterns = [
-        { wrong: 'sjcl.clusters.zeabur.com', correct: 'sjc1.clusters.zeabur.com', desc: '字母l应该是数字1' },
-        { wrong: 'sjcI.clusters.zeabur.com', correct: 'sjc1.clusters.zeabur.com', desc: '字母I应该是数字1' },
-        { wrong: 'sjcL.clusters.zeabur.com', correct: 'sjc1.clusters.zeabur.com', desc: '字母L应该是数字1' },
-    ];
-    
-    // 使用字符串匹配和URL解析两种方式检查
-    for (const pattern of hostnamePatterns) {
-        if (MONGODB_URI.includes(pattern.wrong) || detectedHostname === pattern.wrong) {
-            issues.push({
-                type: 'hostname_typo',
-                message: `主机名拼写错误：${pattern.wrong}`,
-                fix: `应该为 ${pattern.correct}（${pattern.desc}）`,
-                correct: MONGODB_URI.replace(new RegExp(pattern.wrong.replace(/\./g, '\\.'), 'g'), pattern.correct)
-            });
-            break; // 只报告第一个错误
-        }
-    }
-    
-    // 额外检查：如果主机名包含 sjc 但不是 sjc1，也提示
-    if (!issues.some(i => i.type === 'hostname_typo')) {
-        if (detectedHostname && detectedHostname.includes('sjc') && !detectedHostname.includes('sjc1.clusters.zeabur.com')) {
-            if (detectedHostname.includes('sjcl') || detectedHostname.includes('sjcI') || detectedHostname.includes('sjcL')) {
-                // 已经在上面检查过了，跳过
-            } else if (detectedHostname.includes('clusters.zeabur.com')) {
-                issues.push({
-                    type: 'hostname_typo',
-                    message: `主机名可能不正确：${detectedHostname}`,
-                    fix: '应该为 sjc1.clusters.zeabur.com（注意是数字1，不是字母l）',
-                    correct: MONGODB_URI.replace(detectedHostname, 'sjc1.clusters.zeabur.com')
-                });
-            }
-        }
-    }
-    
-    // 检查是否缺少数据库名称和authSource
-    if (!MONGODB_URI.includes('/questionnaire') && !MONGODB_URI.includes('/admin') && !MONGODB_URI.includes('/test')) {
-        issues.push({
-            type: 'missing_database',
-            message: '连接字符串缺少数据库名称',
-            fix: '应该在端口号后添加 /questionnaire?authSource=admin',
-            correct: MONGODB_URI.replace(/:28174$/, ':28174/questionnaire?authSource=admin')
-        });
-    }
-    
-    // 检查是否缺少authSource参数
-    if (MONGODB_URI.includes('/questionnaire') && !MONGODB_URI.includes('authSource')) {
-        issues.push({
-            type: 'missing_authSource',
-            message: '连接字符串缺少 authSource 参数',
-            fix: '应该在数据库名称后添加 ?authSource=admin',
-            correct: MONGODB_URI.replace(/\/questionnaire$/, '/questionnaire?authSource=admin')
-        });
-    }
-    
-    // 如果有问题，显示并修复
-    if (issues.length > 0) {
-        console.error('\n' + '='.repeat(70));
-        console.error('❌ 检测到连接字符串配置错误！');
-        console.error('='.repeat(70) + '\n');
-        
-        issues.forEach((issue, index) => {
-            console.error(`问题 ${index + 1}: ${issue.message}`);
-            console.error(`   原因: ${issue.fix}`);
-            console.error(`   当前值: ${MONGODB_URI.replace(/:[^:@]+@/, ':****@')}`);
-            console.error(`   正确值: ${issue.correct.replace(/:[^:@]+@/, ':****@')}`);
-            console.error('');
-        });
-        
-        console.error('💡 修复步骤:');
-        console.error('   1. 打开项目根目录的 .env 文件');
-        console.error('   2. 找到 MONGODB_URI 这一行');
-        console.error('   3. 将主机名从 sjcl 改为 sjc1（注意：是数字1，不是字母l）');
-        console.error('   4. 确保连接字符串格式完整');
-        console.error('   5. 保存文件后重新运行命令');
-        console.error('\n📝 正确的 .env 文件内容:');
-        console.error('   MONGODB_URI=mongodb://mongo:bNv0OPw2C34V97GQMnYo18augx65Lldq@sjc1.clusters.zeabur.com:28174/questionnaire?authSource=admin');
-        console.error('   DB_NAME=questionnaire');
-        console.error('\n⚠️  重要提示:');
-        console.error('   - 主机名必须是 sjc1（数字1），不能是 sjcl（字母l）');
-        console.error('   - 端口号必须是 28174');
-        console.error('   - 必须包含 /questionnaire?authSource=admin');
-        console.error('\n🔧 快速修复命令（Windows PowerShell）:');
-        console.error('   在项目根目录运行以下命令来修复 .env 文件:');
-        console.error('   (Get-Content .env) -replace "sjcl\\.clusters", "sjc1.clusters" | Set-Content .env');
-        console.error('\n' + '='.repeat(70));
+    if (!MONGODB_URI.includes('@')) {
+        console.error('❌ 连接字符串格式错误：缺少认证信息（用户名和密码）');
         process.exit(1);
     }
     
@@ -207,17 +115,7 @@ async function syncData() {
         
         client = new MongoClient(MONGODB_URI, clientOptions);
         
-        // 检查连接字符串中的端口号
-        const portMatch = MONGODB_URI.match(/:(\d+)\//);
-        if (portMatch) {
-            const detectedPort = portMatch[1];
-            if (detectedPort === '23654') {
-                console.warn('⚠️  警告: 检测到旧端口号 23654');
-                console.warn('   当前服务器端口应为 28174');
-                console.warn('   请更新 .env 文件中的 MONGODB_URI');
-                console.warn('   正确格式: mongodb://mongo:密码@sjc1.clusters.zeabur.com:28174/questionnaire?authSource=admin');
-            }
-        }
+        // 连接字符串验证已简化，不再检查特定端口号
         
         // 尝试连接，设置超时
         console.log('⏳ 尝试连接（最多等待30秒）...');
@@ -358,68 +256,23 @@ async function syncData() {
                     console.error(`  数据库: ${url.pathname.replace('/', '') || '未指定'}`);
                     console.error(`  认证源: ${url.searchParams.get('authSource') || '未指定'}`);
                     
-                    // 检查主机名拼写错误（多种可能的错误）
-                    const wrongHostnames = ['sjcl.clusters.zeabur.com', 'sjcI.clusters.zeabur.com', 'sjcL.clusters.zeabur.com'];
-                    if (wrongHostnames.includes(url.hostname)) {
-                        console.error('\n' + '='.repeat(70));
-                        console.error('❌ 主机名拼写错误！这是导致连接失败的主要原因！');
-                        console.error('='.repeat(70));
-                        console.error(`  当前主机: ${url.hostname} (错误：使用了字母l/I/L)`);
-                        console.error('  正确主机: sjc1.clusters.zeabur.com (正确：数字1)');
-                        console.error('\n💡 解决方案:');
-                        console.error('  1. 打开项目根目录的 .env 文件');
-                        console.error('  2. 找到 MONGODB_URI 这一行');
-                        console.error('  3. 将 sjcl 改为 sjc1（注意：是数字1，不是字母l）');
-                        console.error('  4. 保存文件后重新运行命令');
-                        console.error('\n🔧 快速修复命令（Windows PowerShell）:');
-                        console.error('   (Get-Content .env) -replace "sjcl\\.clusters", "sjc1.clusters" | Set-Content .env');
-                        console.error('='.repeat(70) + '\n');
-                    }
-                    
-                    // 检查端口号
-                    if (port === '23654') {
-                        console.error('\n❌ 端口号错误！');
-                        console.error('  当前端口: 23654 (旧端口)');
-                        console.error('  正确端口: 28174 (当前服务器端口)');
-                        console.error('\n💡 解决方案:');
-                        console.error('  在 .env 文件中将端口号从 23654 改为 28174');
-                    }
-                    
-                    // 检查是否缺少数据库名称
-                    if (!url.pathname || url.pathname === '/') {
-                        console.error('\n❌ 缺少数据库名称！');
-                        console.error('  连接字符串应该在端口号后包含 /questionnaire');
-                        console.error('\n💡 解决方案:');
-                        console.error('  在 .env 文件中，确保连接字符串包含 /questionnaire?authSource=admin');
-                    }
-                    
-                    // 检查是否缺少authSource
-                    if (!url.searchParams.get('authSource')) {
-                        console.error('\n❌ 缺少 authSource 参数！');
-                        console.error('  连接字符串应该包含 ?authSource=admin');
-                        console.error('\n💡 解决方案:');
-                        console.error('  在 .env 文件中，确保连接字符串包含 ?authSource=admin');
-                    }
+                    // 验证逻辑已简化，不再检查特定主机名和端口号
                 } catch (e) {
                     console.error('  无法解析连接字符串:', e.message);
                 }
             }
             
-            console.error('\n📝 正确的连接字符串格式:');
-            console.error('   mongodb://mongo:密码@sjc1.clusters.zeabur.com:28174/questionnaire?authSource=admin');
-            console.error('\n   注意:');
-            console.error('   - 主机名是 sjc1（数字1），不是 sjcl（字母l）');
-            console.error('   - 端口号是 28174，不是 23654');
-            console.error('   - 必须包含 /questionnaire 和 ?authSource=admin');
+            console.error('\n📝 连接字符串格式:');
+            console.error('   mongodb://用户名:密码@主机:端口/数据库名?参数');
+            console.error('   或');
+            console.error('   mongodb+srv://用户名:密码@主机/数据库名?参数');
             
-            console.error('\n其他可能的原因:');
-            console.error('  1. Zeabur MongoDB 可能只允许从 Zeabur 内部网络访问（最常见）');
-            console.error('     → 这是云服务的安全设置，防止外部直接访问数据库');
-            console.error('     → 本地计算机无法直接连接到 Zeabur 的 MongoDB');
-            console.error('  2. 检查网络连接是否正常');
-            console.error('  3. 检查防火墙是否阻止了 MongoDB 端口 28174');
-            console.error('  4. 检查公司/学校网络是否有限制');
-            console.error('  5. 本地可能无法直接连接，需要使用 API 导出数据');
+            console.error('\n可能的原因:');
+            console.error('  1. 检查网络连接是否正常');
+            console.error('  2. 检查防火墙是否阻止了 MongoDB 端口');
+            console.error('  3. 检查公司/学校网络是否有限制');
+            console.error('  4. 确认 MongoDB 服务器地址和端口正确');
+            console.error('  5. 确认用户名和密码正确');
             
             // 检查连接字符串格式
             if (!MONGODB_URI.startsWith('mongodb://') && !MONGODB_URI.startsWith('mongodb+srv://')) {
@@ -439,31 +292,11 @@ async function syncData() {
         }
         
         console.error('\n💡 建议解决方案:');
-        console.error('');
-        console.error('  方案1: 使用 API 导出数据（强烈推荐，最可靠）');
-        console.error('    Zeabur MongoDB 通常只允许从 Zeabur 内部网络访问，');
-        console.error('    本地计算机无法直接连接。使用 API 是最佳解决方案。');
-        console.error('');
-        console.error('    方法A - 使用 curl 命令:');
-        console.error('      curl https://questionnaire-app.zeabur.app/api/export -o data.json');
-        console.error('');
-        console.error('    方法B - 使用浏览器:');
-        console.error('      1. 打开浏览器访问: https://questionnaire-app.zeabur.app/api/export');
-        console.error('      2. 保存返回的 JSON 数据到 data.json 文件');
-        console.error('');
-        console.error('    方法C - 使用 PowerShell:');
-        console.error('      Invoke-WebRequest -Uri https://questionnaire-app.zeabur.app/api/export -OutFile data.json');
-        console.error('');
-        console.error('  方案2: 检查网络连接（如果必须直接连接）');
-        console.error('    → 确认主机名正确: sjc1.clusters.zeabur.com（不是 sjcl）');
-        console.error('    → 确认端口号正确: 28174');
-        console.error('    → 检查防火墙是否阻止了端口 28174');
-        console.error('    → 检查公司/学校网络是否有限制');
-        console.error('    → 尝试使用 VPN 或更换网络环境');
-        console.error('');
-        console.error('  方案3: 在 Zeabur 服务器上运行同步脚本');
-        console.error('    → 如果需要在 Zeabur 上运行，可以在 Zeabur 的终端中执行');
-        console.error('    → 或者创建一个 Zeabur 服务来定期同步数据');
+        console.error('  1. 检查连接字符串是否正确（用户名、密码、主机、端口）');
+        console.error('  2. 确认 MongoDB 服务器允许从当前网络访问');
+        console.error('  3. 检查网络连接和防火墙设置');
+        console.error('  4. 如果使用 MongoDB Atlas，确认 IP 白名单设置');
+        console.error('  5. 尝试使用 API 导出数据（如果应用已部署）');
         
         console.error('\n详细错误信息:');
         console.error(error.stack);
