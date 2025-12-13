@@ -1313,28 +1313,35 @@ async function loadHeartCountsFromServer() {
                 const productId = item.id;
                 const serverCount = result.heartCounts[productId];
                 
-                // 如果服务器有数据
+                // 如果服务器有数据，优先使用服务器值（确保所有设备显示一致）
                 if (serverCount !== undefined) {
-                    const productId = item.id;
-                    const localCount = heartCounts[index] || getRandomInitialCount(productId);
+                    const localCount = heartCounts[index];
                     const localUpdateTime = lastUpdateTime[index] || 0;
-                    const serverUpdateTime = result.updateTimes?.[productId] || 0;
                     
-                    // 如果本地有最近的更新（5秒内），且本地值更大，保持本地值
+                    // 如果本地有用户点击的更新（5秒内），且本地值是基于服务器值的合理递增
+                    // 说明本地更新还未同步到服务器，保持本地值以提供即时反馈
                     const timeSinceLocalUpdate = Date.now() - localUpdateTime;
-                    if (timeSinceLocalUpdate < 5000 && localCount >= serverCount) {
-                        // 本地值更新，保持本地值
-                        console.log(`产品 ${productId} 保持本地最新值: ${localCount} (服务器: ${serverCount})`);
+                    if (timeSinceLocalUpdate < 5000 && localCount !== undefined && localCount > serverCount) {
+                        // 检查本地值是否是合理的递增（服务器值 + 1, +2, +3...）
+                        // 如果本地值在合理范围内（服务器值 + 1 到 +10），说明是用户点击导致的，保持本地值
+                        const increment = localCount - serverCount;
+                        if (increment > 0 && increment <= 10) {
+                            // 本地值是基于服务器值的合理递增，保持本地值（等待服务器同步）
+                            console.log(`产品 ${productId} 保持本地最新值: ${localCount} (服务器: ${serverCount}, 增量: ${increment})`);
+                        } else {
+                            // 本地值异常（可能是随机初始值），使用服务器值确保一致性
+                            heartCounts[index] = serverCount;
+                            console.log(`产品 ${productId} 使用服务器值: ${serverCount} (本地值 ${localCount} 异常，重置为服务器值)`);
+                        }
                     } else {
-                        // 使用服务器值或两者中较大的值
-                        heartCounts[index] = Math.max(serverCount, localCount);
+                        // 使用服务器值（确保所有设备显示一致）
+                        // 这是最重要的：服务器值是唯一真实来源，必须优先使用
+                        heartCounts[index] = serverCount;
                     }
                 } else {
-                    // 如果服务器没有该产品的数据，使用本地值或随机初始值
-                    if (heartCounts[index] === undefined) {
-                        heartCounts[index] = getRandomInitialCount(productId);
-                        console.warn(`产品 ${productId} 在服务器中没有数据，使用随机初始值 ${heartCounts[index]}`);
-                    }
+                    // 如果服务器没有该产品的数据，使用随机初始值（仅用于显示，不影响服务器数据）
+                    heartCounts[index] = getRandomInitialCount(productId);
+                    console.warn(`产品 ${productId} 在服务器中没有数据，使用随机初始值 ${heartCounts[index]}`);
                 }
                 
                 // 更新显示
