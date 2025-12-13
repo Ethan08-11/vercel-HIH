@@ -459,11 +459,11 @@ function getRandomInitialCount(productId) {
     const seed = productId * 12345 + 67890;
     const random = Math.sin(seed) * 10000;
     const normalized = (random - Math.floor(random));
-    // 生成2500-3000之间的随机数
-    return Math.floor(2500 + normalized * 500);
+    // 生成2000-3000之间的随机数
+    return Math.floor(2000 + normalized * 1000);
 }
 
-let heartCounts = {}; // 每个产品的爱心数量，初始值为随机值（2500-3000）
+let heartCounts = {}; // 每个产品的爱心数量，初始值为随机值（2000-3000）
 let productJumpTimers = {}; // 存储每个产品的跳转定时器
 let pendingHeartUpdates = {}; // 存储待处理的爱心更新队列 { productIndex: pendingIncrement }
 let updateLocks = {}; // 防止并发更新的锁 { productIndex: isUpdating }
@@ -701,10 +701,10 @@ async function initQuestionnaire() {
         }, 50);
     });
     
-    // 定期从服务器同步爱心数量（每10秒）
+    // 定期从服务器同步爱心数量（每5秒，确保移动端和电脑端实时同步）
     setInterval(async () => {
         await loadHeartCountsFromServer();
-    }, 10000);
+    }, 5000);
     
     // 监听窗口大小变化，重新计算轮播位置
     let resizeTimer;
@@ -1212,25 +1212,52 @@ async function updateHeartCount(productIndex, increment) {
                 
                 const result = await response.json();
                 
-                // 如果服务器返回了count值，始终使用服务器值以确保数据一致性
+                // 如果服务器返回了count值，智能合并服务器值和本地值
                 if (result.count !== undefined) {
                     const currentLocalCount = heartCounts[productIndex];
                     const serverCount = result.count;
                     
-                    // 始终使用服务器返回的值，确保本地与服务器保持一致
-                    // 这样可以避免本地和服务器数据不一致的问题
-                    updateHeartCountDisplay(productIndex, serverCount);
-                    
-                    if (result.success) {
-                        if (serverCount === currentLocalCount) {
-                            console.log(`✅ 产品 ${productId} 爱心数量已保存到服务器: ${serverCount} (本地: ${currentLocalCount})`);
+                    // 智能合并策略：防止连续点击时的回退问题
+                    // 1. 如果服务器值 >= 本地值，说明服务器已处理了我们的更新（可能包含其他用户的更新），使用服务器值
+                    // 2. 如果服务器值 < 本地值，说明本地有更新的点击（快速连续点击），保持本地值并重新发送更新
+                    if (serverCount >= currentLocalCount) {
+                        // 服务器值更新或相同，使用服务器值（可能包含了其他用户的点赞）
+                        updateHeartCountDisplay(productIndex, serverCount);
+                        if (result.success) {
+                            if (serverCount === currentLocalCount) {
+                                console.log(`✅ 产品 ${productId} 爱心数量已保存到服务器: ${serverCount} (本地: ${currentLocalCount})`);
+                            } else {
+                                console.log(`✅ 产品 ${productId} 爱心数量已保存到服务器: ${serverCount} (本地已同步: ${currentLocalCount} -> ${serverCount})`);
+                            }
+                            // 更新成功后，延迟1秒触发一次同步，确保移动端和电脑端实时同步
+                            setTimeout(async () => {
+                                await loadHeartCountsFromServer();
+                            }, 1000);
                         } else {
-                            console.log(`✅ 产品 ${productId} 爱心数量已保存到服务器: ${serverCount} (本地已同步: ${currentLocalCount} -> ${serverCount})`);
+                            console.warn(`⚠️ 产品 ${productId} 更新失败，但使用服务器返回的值: ${serverCount}`);
                         }
+                        return; // 有count值，退出重试循环
                     } else {
-                        console.warn(`⚠️ 产品 ${productId} 更新失败，但使用服务器返回的值: ${serverCount}`);
+                        // 服务器值小于本地值，说明本地有更新的点击，需要重新发送更新
+                        const pendingIncrement = currentLocalCount - serverCount;
+                        if (pendingIncrement > 0) {
+                            console.log(`🔄 产品 ${productId} 本地值(${currentLocalCount}) > 服务器值(${serverCount})，重新发送更新 (+${pendingIncrement})`);
+                            // 重新累积待处理的增量
+                            pendingHeartUpdates[productIndex] = (pendingHeartUpdates[productIndex] || 0) + pendingIncrement;
+                            // 继续重试循环，重新发送更新
+                            retryCount = 0; // 重置重试计数
+                            continue; // 继续while循环，重新发送请求
+                        } else {
+                            // 异常情况，使用服务器值
+                            updateHeartCountDisplay(productIndex, serverCount);
+                            console.warn(`⚠️ 产品 ${productId} 异常情况，使用服务器值: ${serverCount}`);
+                            return;
+                        }
                     }
-                    return; // 有count值，退出重试循环
+                } else if (result.success) {
+                    // 成功但没有count值，保持本地更新
+                    console.log(`✅ 产品 ${productId} 更新成功（使用本地值）`);
+                    return;
                 } else if (result.success) {
                     // 成功但没有count值，保持本地更新
                     console.log(`✅ 产品 ${productId} 更新成功（使用本地值）`);
