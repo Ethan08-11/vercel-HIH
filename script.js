@@ -1135,10 +1135,26 @@ function createProductCard(item, index) {
     // 初始化该产品的爱心数量（使用2000-3000随机初始值，与服务器相互独立）
     // 优先使用 localStorage 中的值，如果没有则使用随机初始值
     if (heartCounts[index] === undefined) {
-        const productId = item.id;
-        heartCounts[index] = getRandomInitialCount(productId); // 本地随机初始值（2000-3000），与服务器独立
-        // 保存初始值到 localStorage
-        saveHeartCountsToStorage();
+        // 再次尝试从localStorage恢复（防止时序问题）
+        const stored = localStorage.getItem(STORAGE_KEY_HEART_COUNTS);
+        if (stored) {
+            try {
+                const parsed = JSON.parse(stored);
+                if (parsed[index] !== undefined && parsed[index] !== null) {
+                    heartCounts[index] = parsed[index];
+                }
+            } catch (e) {
+                console.warn(`产品 ${item.id} 从localStorage恢复失败:`, e);
+            }
+        }
+        
+        // 如果localStorage中也没有，使用随机初始值
+        if (heartCounts[index] === undefined) {
+            const productId = item.id;
+            heartCounts[index] = getRandomInitialCount(productId); // 本地随机初始值（2000-3000），与服务器独立
+            // 保存初始值到 localStorage
+            saveHeartCountsToStorage();
+        }
     }
     
     const heartCountDisplay = document.createElement('div');
@@ -1212,8 +1228,24 @@ function updateHeartCountDisplay(productIndex, count) {
 async function updateHeartCount(productIndex, increment) {
     // 确保该产品的爱心数量已初始化
     if (heartCounts[productIndex] === undefined) {
-        // 如果还没有从服务器加载，先尝试加载
-        await loadHeartCountsFromServer();
+        // 优先从localStorage恢复
+        const stored = localStorage.getItem(STORAGE_KEY_HEART_COUNTS);
+        if (stored) {
+            try {
+                const parsed = JSON.parse(stored);
+                if (parsed[productIndex] !== undefined && parsed[productIndex] !== null) {
+                    heartCounts[productIndex] = parsed[productIndex];
+                }
+            } catch (e) {
+                console.warn(`产品 ${productImages[productIndex].id} 从localStorage恢复失败:`, e);
+            }
+        }
+        
+        // 如果localStorage中也没有，尝试从服务器加载
+        if (heartCounts[productIndex] === undefined) {
+            await loadHeartCountsFromServer();
+        }
+        
         // 如果加载后还是没有，使用随机初始值
         if (heartCounts[productIndex] === undefined) {
             const productId = productImages[productIndex].id;
@@ -1375,32 +1407,38 @@ async function loadHeartCountsFromServer() {
         if (result.success && result.heartCounts) {
             // 本地和服务器相互独立：本地显示2000-3000随机初始值，服务器从2000开始
             // 服务器值仅用于同步点击次数，不影响本地显示值
+            // 重要：localStorage中的值优先级最高，不会被覆盖
             productImages.forEach((item, index) => {
                 const productId = item.id;
                 const serverCount = result.heartCounts[productId];
                 
-                // 如果本地还没有初始化，使用随机初始值（2000-3000）
+                // 如果本地还没有值，尝试从localStorage恢复（可能在服务器加载前未恢复）
                 if (heartCounts[index] === undefined) {
-                    heartCounts[index] = getRandomInitialCount(productId);
-                    // 保存初始值到 localStorage
-                    saveHeartCountsToStorage();
-                    console.log(`产品 ${productId} 本地初始化: ${heartCounts[index]} (服务器: ${serverCount || '无'})`);
-                } else {
-                    // 本地已有值（可能是随机初始值或点击后的值）
-                    const localCount = heartCounts[index];
-                    const localUpdateTime = lastUpdateTime[index] || 0;
-                    
-                    // 如果本地有用户点击的更新（5秒内），保持本地值
-                    // 本地值在随机初始值基础上递增，服务器值在2000基础上递增，二者相互独立
-                    const timeSinceLocalUpdate = Date.now() - localUpdateTime;
-                    if (timeSinceLocalUpdate < 5000) {
-                        // 本地有最近的更新，保持本地值（本地和服务器相互独立）
-                        console.log(`产品 ${productId} 保持本地值: ${localCount} (服务器: ${serverCount || '无'})`);
-                    } else {
-                        // 本地没有最近的更新，但保持本地值不变（本地和服务器相互独立）
-                        // 本地显示值始终基于随机初始值，不受服务器值影响
-                        console.log(`产品 ${productId} 本地值: ${localCount} (服务器: ${serverCount || '无'})`);
+                    // 再次尝试从localStorage恢复（防止时序问题）
+                    const stored = localStorage.getItem(STORAGE_KEY_HEART_COUNTS);
+                    if (stored) {
+                        try {
+                            const parsed = JSON.parse(stored);
+                            if (parsed[index] !== undefined && parsed[index] !== null) {
+                                heartCounts[index] = parsed[index];
+                                console.log(`产品 ${productId} 从localStorage恢复: ${heartCounts[index]} (服务器: ${serverCount || '无'})`);
+                            }
+                        } catch (e) {
+                            console.warn(`产品 ${productId} 从localStorage恢复失败:`, e);
+                        }
                     }
+                    
+                    // 如果localStorage中也没有，使用随机初始值（2000-3000）
+                    if (heartCounts[index] === undefined) {
+                        heartCounts[index] = getRandomInitialCount(productId);
+                        // 保存初始值到 localStorage
+                        saveHeartCountsToStorage();
+                        console.log(`产品 ${productId} 本地初始化: ${heartCounts[index]} (服务器: ${serverCount || '无'})`);
+                    }
+                } else {
+                    // 本地已有值（从localStorage恢复或之前设置的），保持不变
+                    const localCount = heartCounts[index];
+                    console.log(`产品 ${productId} 保持本地值: ${localCount} (服务器: ${serverCount || '无'})`);
                 }
                 
                 // 更新显示（始终显示本地值）
@@ -1409,6 +1447,9 @@ async function loadHeartCountsFromServer() {
                     countDisplay.textContent = formatNumber(heartCounts[index]);
                 }
             });
+            
+            // 确保所有值都保存到localStorage（防止丢失）
+            saveHeartCountsToStorage();
             
             console.log('✅ 爱心数量已从服务器加载:', result.heartCounts);
             console.log('本地heartCounts:', heartCounts);
@@ -1422,9 +1463,26 @@ async function loadHeartCountsFromServer() {
                 productImages.forEach((item, index) => {
                     const productId = item.id;
                     // 本地和服务器相互独立，保持本地值不变
+                    // 优先使用localStorage中的值
                     if (heartCounts[index] === undefined) {
-                        // 如果本地还没有值，使用随机初始值
-                        heartCounts[index] = getRandomInitialCount(productId);
+                        // 尝试从localStorage恢复
+                        const stored = localStorage.getItem(STORAGE_KEY_HEART_COUNTS);
+                        if (stored) {
+                            try {
+                                const parsed = JSON.parse(stored);
+                                if (parsed[index] !== undefined && parsed[index] !== null) {
+                                    heartCounts[index] = parsed[index];
+                                }
+                            } catch (e) {
+                                console.warn(`产品 ${productId} 从localStorage恢复失败:`, e);
+                            }
+                        }
+                        
+                        // 如果localStorage中也没有，使用随机初始值
+                        if (heartCounts[index] === undefined) {
+                            heartCounts[index] = getRandomInitialCount(productId);
+                            saveHeartCountsToStorage();
+                        }
                     }
                     // 更新显示（始终显示本地值）
                     const countDisplay = document.querySelector(`.heart-count[data-product-index="${index}"]`);
@@ -1441,10 +1499,26 @@ async function loadHeartCountsFromServer() {
                 // 只有在heartCounts完全为空时才设置随机初始值
                 productImages.forEach((item, index) => {
                     if (heartCounts[index] === undefined) {
-                        const productId = item.id;
-                        heartCounts[index] = getRandomInitialCount(productId);
-                        // 保存初始值到 localStorage
-                        saveHeartCountsToStorage();
+                        // 尝试从localStorage恢复
+                        const stored = localStorage.getItem(STORAGE_KEY_HEART_COUNTS);
+                        if (stored) {
+                            try {
+                                const parsed = JSON.parse(stored);
+                                if (parsed[index] !== undefined && parsed[index] !== null) {
+                                    heartCounts[index] = parsed[index];
+                                }
+                            } catch (e) {
+                                console.warn(`产品 ${item.id} 从localStorage恢复失败:`, e);
+                            }
+                        }
+                        
+                        // 如果localStorage中也没有，使用随机初始值
+                        if (heartCounts[index] === undefined) {
+                            const productId = item.id;
+                            heartCounts[index] = getRandomInitialCount(productId);
+                            // 保存初始值到 localStorage
+                            saveHeartCountsToStorage();
+                        }
                     }
                     // 如果已有数据，保持不变
                 });
@@ -1453,13 +1527,29 @@ async function loadHeartCountsFromServer() {
     } catch (error) {
         console.error('❌ 从服务器加载爱心数量失败:', error);
         // 如果失败，保持现有数据，不重置
-        // 只有在完全没有数据时才设置随机初始值
+        // 优先从localStorage恢复，只有在完全没有数据时才设置随机初始值
         productImages.forEach((item, index) => {
             if (heartCounts[index] === undefined) {
-                const productId = item.id;
-                heartCounts[index] = getRandomInitialCount(productId);
-                // 保存初始值到 localStorage
-                saveHeartCountsToStorage();
+                // 尝试从localStorage恢复
+                const stored = localStorage.getItem(STORAGE_KEY_HEART_COUNTS);
+                if (stored) {
+                    try {
+                        const parsed = JSON.parse(stored);
+                        if (parsed[index] !== undefined && parsed[index] !== null) {
+                            heartCounts[index] = parsed[index];
+                        }
+                    } catch (e) {
+                        console.warn(`产品 ${item.id} 从localStorage恢复失败:`, e);
+                    }
+                }
+                
+                // 如果localStorage中也没有，使用随机初始值
+                if (heartCounts[index] === undefined) {
+                    const productId = item.id;
+                    heartCounts[index] = getRandomInitialCount(productId);
+                    // 保存初始值到 localStorage
+                    saveHeartCountsToStorage();
+                }
             }
             // 如果已有数据，保持不变
         });
