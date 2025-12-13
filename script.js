@@ -451,7 +451,7 @@ let answers = {};
 let currentIndex = 0;
 let autoPlayTimer = null; // 自动轮播定时器
 const AUTO_PLAY_INTERVAL = 5000; // 自动轮播间隔（5秒）
-// 生成基于产品ID的随机初始值（2000-2500之间）
+// 生成基于产品ID的随机初始值（2500-3000之间）
 // 使用产品ID作为种子，确保每个产品的初始值是固定的
 function getRandomInitialCount(productId) {
     // 使用简单的伪随机算法，基于产品ID生成固定随机数
@@ -459,11 +459,11 @@ function getRandomInitialCount(productId) {
     const seed = productId * 12345 + 67890;
     const random = Math.sin(seed) * 10000;
     const normalized = (random - Math.floor(random));
-    // 生成2000-3000之间的随机数
-    return Math.floor(2000 + normalized * 1000);
+    // 生成2500-3000之间的随机数
+    return Math.floor(2500 + normalized * 500);
 }
 
-let heartCounts = {}; // 每个产品的爱心数量，初始值为随机值（2000-3000）
+let heartCounts = {}; // 每个产品的爱心数量，初始值为随机值（2500-3000）
 let productJumpTimers = {}; // 存储每个产品的跳转定时器
 let pendingHeartUpdates = {}; // 存储待处理的爱心更新队列 { productIndex: pendingIncrement }
 let updateLocks = {}; // 防止并发更新的锁 { productIndex: isUpdating }
