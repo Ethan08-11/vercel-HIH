@@ -474,6 +474,57 @@ const MAX_CONCURRENT_LOADS = isMobileDevice() ? 3 : 4; // 移动端最多3个并
 let clickTimers = {}; // 点击防抖定时器 { productIndex: timer }
 const CLICK_DEBOUNCE_DELAY = 500; // 点击防抖延迟（毫秒），防止快速点击
 
+// localStorage 键名
+const STORAGE_KEY_HEART_COUNTS = 'questionnaire_heart_counts';
+const STORAGE_KEY_LAST_UPDATE_TIME = 'questionnaire_last_update_time';
+
+// 从 localStorage 加载本地爱心数量
+function loadHeartCountsFromStorage() {
+    try {
+        const stored = localStorage.getItem(STORAGE_KEY_HEART_COUNTS);
+        const storedUpdateTime = localStorage.getItem(STORAGE_KEY_LAST_UPDATE_TIME);
+        
+        if (stored) {
+            const parsed = JSON.parse(stored);
+            // 恢复 heartCounts
+            Object.keys(parsed).forEach(index => {
+                const numIndex = parseInt(index);
+                if (!isNaN(numIndex) && parsed[index] !== undefined && parsed[index] !== null) {
+                    heartCounts[numIndex] = parsed[index];
+                }
+            });
+            
+            // 恢复 lastUpdateTime
+            if (storedUpdateTime) {
+                const parsedTime = JSON.parse(storedUpdateTime);
+                Object.keys(parsedTime).forEach(index => {
+                    const numIndex = parseInt(index);
+                    if (!isNaN(numIndex) && parsedTime[index] !== undefined) {
+                        lastUpdateTime[numIndex] = parsedTime[index];
+                    }
+                });
+            }
+            
+            console.log('✅ 从 localStorage 恢复本地爱心数量:', heartCounts);
+            return true;
+        }
+    } catch (error) {
+        console.warn('⚠️ 从 localStorage 加载爱心数量失败:', error);
+    }
+    return false;
+}
+
+// 保存本地爱心数量到 localStorage
+function saveHeartCountsToStorage() {
+    try {
+        localStorage.setItem(STORAGE_KEY_HEART_COUNTS, JSON.stringify(heartCounts));
+        localStorage.setItem(STORAGE_KEY_LAST_UPDATE_TIME, JSON.stringify(lastUpdateTime));
+        // 不输出日志，避免频繁保存时产生过多日志
+    } catch (error) {
+        console.warn('⚠️ 保存爱心数量到 localStorage 失败:', error);
+    }
+}
+
 // 移动端图片缓存系统 - 彻底解决白屏闪烁问题
 const imageCache = new Map(); // 内存缓存：存储已加载的Image对象 { url: Image }
 const imageCacheStatus = new Map(); // 缓存状态：{ url: 'loading' | 'loaded' | 'error' }
@@ -639,6 +690,10 @@ async function initQuestionnaire() {
         currentIndex = undefined;
     }
     
+    // 首先从 localStorage 恢复本地爱心数量（防止页面刷新后重置）
+    console.log('从 localStorage 恢复本地爱心数量...');
+    loadHeartCountsFromStorage();
+    
     // 移动端：初始化图片缓存（提前加载并缓存图片）
     const isMobile = isMobileDevice();
     if (isMobile) {
@@ -649,6 +704,7 @@ async function initQuestionnaire() {
     }
     
     // 先尝试从服务器加载爱心数量（如果失败，使用默认值）
+    // 注意：服务器值不影响本地显示，本地值已从 localStorage 恢复
     console.log('开始从服务器加载爱心数量...');
     await loadHeartCountsFromServer();
     
@@ -1077,9 +1133,12 @@ function createProductCard(item, index) {
     heartIcon.innerHTML = '<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path class="heart-path" d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" fill="white"/></svg>';
     
     // 初始化该产品的爱心数量（使用2000-3000随机初始值，与服务器相互独立）
+    // 优先使用 localStorage 中的值，如果没有则使用随机初始值
     if (heartCounts[index] === undefined) {
         const productId = item.id;
         heartCounts[index] = getRandomInitialCount(productId); // 本地随机初始值（2000-3000），与服务器独立
+        // 保存初始值到 localStorage
+        saveHeartCountsToStorage();
     }
     
     const heartCountDisplay = document.createElement('div');
@@ -1159,6 +1218,8 @@ async function updateHeartCount(productIndex, increment) {
         if (heartCounts[productIndex] === undefined) {
             const productId = productImages[productIndex].id;
             heartCounts[productIndex] = getRandomInitialCount(productId);
+            // 保存初始值到 localStorage
+            saveHeartCountsToStorage();
         }
     }
     
@@ -1321,6 +1382,8 @@ async function loadHeartCountsFromServer() {
                 // 如果本地还没有初始化，使用随机初始值（2000-3000）
                 if (heartCounts[index] === undefined) {
                     heartCounts[index] = getRandomInitialCount(productId);
+                    // 保存初始值到 localStorage
+                    saveHeartCountsToStorage();
                     console.log(`产品 ${productId} 本地初始化: ${heartCounts[index]} (服务器: ${serverCount || '无'})`);
                 } else {
                     // 本地已有值（可能是随机初始值或点击后的值）
@@ -1380,6 +1443,8 @@ async function loadHeartCountsFromServer() {
                     if (heartCounts[index] === undefined) {
                         const productId = item.id;
                         heartCounts[index] = getRandomInitialCount(productId);
+                        // 保存初始值到 localStorage
+                        saveHeartCountsToStorage();
                     }
                     // 如果已有数据，保持不变
                 });
@@ -1393,6 +1458,8 @@ async function loadHeartCountsFromServer() {
             if (heartCounts[index] === undefined) {
                 const productId = item.id;
                 heartCounts[index] = getRandomInitialCount(productId);
+                // 保存初始值到 localStorage
+                saveHeartCountsToStorage();
             }
             // 如果已有数据，保持不变
         });
