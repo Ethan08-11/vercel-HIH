@@ -66,7 +66,7 @@ try {
     }
 } catch (e) {}
 
-// 生成基于产品ID的随机初始值（1500-2500之间）
+// 生成基于产品ID的随机初始值（2000-2500之间）
 // 使用产品ID作为种子，确保每个产品的初始值是固定的
 function getRandomInitialCount(productId) {
     // 使用简单的伪随机算法，基于产品ID生成固定随机数
@@ -74,8 +74,8 @@ function getRandomInitialCount(productId) {
     const seed = productId * 12345 + 67890;
     const random = Math.sin(seed) * 10000;
     const normalized = (random - Math.floor(random));
-    // 生成1500-2500之间的随机数
-    return Math.floor(1500 + normalized * 1000);
+    // 生成2000-2500之间的随机数
+    return Math.floor(2000 + normalized * 500);
 }
 
 const app = express();
@@ -698,7 +698,7 @@ app.get('/api/heart-counts', async (req, res) => {
             const counts = await db.getHeartCounts();
             console.log('📊 从数据库获取爱心数量:', counts);
             
-            // 确保所有产品都有数据（如果数据库中没有，返回随机初始值1500-2500）
+            // 确保所有产品都有数据（如果数据库中没有，返回随机初始值2000-2500）
             const allProductIds = Array.from({ length: 63 }, (_, i) => i + 1);
             const result = {};
             allProductIds.forEach(productId => {
@@ -718,7 +718,7 @@ app.get('/api/heart-counts', async (req, res) => {
             });
         }
         
-        // 如果没有数据库，返回所有产品的随机初始值（1500-2500）
+        // 如果没有数据库，返回所有产品的随机初始值（2000-2500）
         console.warn('⚠️ MongoDB未配置，返回随机初始爱心数量');
         const allProductIds = Array.from({ length: 63 }, (_, i) => i + 1);
         const defaultCounts = {};

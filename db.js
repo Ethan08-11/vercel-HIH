@@ -438,7 +438,7 @@ async function updateHeartCount(productId, increment, userInfo = {}) {
         let newCount;
         
         if (!existing) {
-            // 如果不存在，创建新文档，初始值为随机值(1500-2500)+增量
+            // 如果不存在，创建新文档，初始值为随机值(2000-2500)+增量
             const randomInitial = getRandomInitialCount(productId);
             const initialCount = randomInitial + increment;
             const result = await collection.insertOne({
@@ -512,7 +512,7 @@ async function updateHeartCount(productId, increment, userInfo = {}) {
     }
 }
 
-// 生成基于产品ID的随机初始值（1500-2500之间）
+// 生成基于产品ID的随机初始值（2000-2500之间）
 // 使用产品ID作为种子，确保每个产品的初始值是固定的
 function getRandomInitialCount(productId) {
     // 使用简单的伪随机算法，基于产品ID生成固定随机数
@@ -520,8 +520,8 @@ function getRandomInitialCount(productId) {
     const seed = productId * 12345 + 67890;
     const random = Math.sin(seed) * 10000;
     const normalized = (random - Math.floor(random));
-    // 生成1500-2500之间的随机数
-    return Math.floor(1500 + normalized * 1000);
+    // 生成2000-2500之间的随机数
+    return Math.floor(2000 + normalized * 500);
 }
 
 // 初始化所有产品的爱心数量（如果不存在）
@@ -540,7 +540,7 @@ async function initHeartCounts(productIds) {
             // 先检查是否已存在，避免覆盖已有数据
             const existing = await collection.findOne({ productId: productId });
             if (!existing) {
-                // 生成随机初始值（1500-2500之间）
+                // 生成随机初始值（2000-2500之间）
                 const initialCount = getRandomInitialCount(productId);
                 // 只有不存在时才创建
                 await collection.insertOne({
