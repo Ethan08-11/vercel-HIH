@@ -876,6 +876,83 @@ app.post('/api/heart-count', async (req, res) => {
     }
 });
 
+// 重置指定产品的服务器爱心数量为2000
+app.post('/api/reset-heart-count', async (req, res) => {
+    try {
+        const { productId } = req.body;
+        
+        if (productId === undefined) {
+            return res.status(400).json({
+                success: false,
+                message: '缺少必要参数：productId'
+            });
+        }
+        
+        const mongoUri = process.env.MONGODB_URI;
+        const useDatabase = !!mongoUri;
+        
+        console.log(`🔄 重置产品 ${productId} 服务器爱心数量为2000`);
+        console.log('  数据库配置:', useDatabase ? '已配置' : '未配置');
+        
+        if (useDatabase) {
+            // 确保数据库连接
+            const dbConnection = await db.connectDB();
+            
+            if (!dbConnection) {
+                console.warn('⚠️ 数据库连接失败，无法重置');
+                return res.status(503).json({
+                    success: false,
+                    message: '数据库连接失败，无法重置',
+                    productId: parseInt(productId)
+                });
+            }
+            
+            try {
+                console.log(`💾 开始重置数据库...`);
+                const newCount = await db.resetHeartCount(parseInt(productId));
+                
+                if (newCount !== null && newCount !== undefined) {
+                    console.log(`✅ 产品 ${productId} 服务器爱心数量已重置为: ${newCount}`);
+                    return res.json({
+                        success: true,
+                        productId: parseInt(productId),
+                        count: newCount,
+                        message: `产品 ${productId} 服务器爱心数量已重置为2000`
+                    });
+                } else {
+                    console.error(`❌ 产品 ${productId} 重置返回null`);
+                    return res.status(500).json({
+                        success: false,
+                        message: '重置失败：返回值为null',
+                        productId: parseInt(productId)
+                    });
+                }
+            } catch (dbError) {
+                console.error(`❌ 产品 ${productId} 重置异常:`, dbError);
+                return res.status(500).json({
+                    success: false,
+                    message: '重置异常：' + dbError.message,
+                    productId: parseInt(productId)
+                });
+            }
+        }
+        
+        // 如果没有数据库，返回提示
+        res.json({
+            success: false,
+            productId: parseInt(productId),
+            message: '数据库未配置，无法重置。请配置 MONGODB_URI 环境变量。',
+            databaseAvailable: false
+        });
+    } catch (error) {
+        console.error('❌ 重置爱心数量时出错:', error);
+        res.status(500).json({
+            success: false,
+            message: '服务器错误：' + error.message
+        });
+    }
+});
+
 // 全局变量，用于存储服务器实例
 let serverInstance = null;
 let isShuttingDown = false;
