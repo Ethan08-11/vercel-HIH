@@ -692,16 +692,24 @@ app.get('/api/heart-counts', async (req, res) => {
             const counts = await db.getHeartCounts();
             console.log('📊 从数据库获取爱心数量:', counts);
             
-            // 确保所有产品都有数据（如果数据库中没有，返回初始值2000）
+            // 确保所有产品都有数据（统一返回2000作为初始值）
             const allProductIds = Array.from({ length: 63 }, (_, i) => i + 1);
             const result = {};
             allProductIds.forEach(productId => {
-                // 如果数据库中有数据，使用数据库数据；否则使用随机初始值
+                // 服务器端统一返回2000作为初始值
                 if (counts[productId] !== undefined && counts[productId] !== null) {
-                    result[productId] = counts[productId];
+                    // 如果数据库中有数据
+                    const dbCount = counts[productId];
+                    // 如果值小于等于2500，说明是初始值，统一改为2000
+                    // 如果值大于2500，说明用户已经点击过，保留真实值
+                    if (dbCount <= 2500) {
+                        result[productId] = 2000; // 统一初始值为2000
+                    } else {
+                        result[productId] = dbCount; // 保留用户点击后的真实值
+                    }
                 } else {
-                    result[productId] = getRandomInitialCount(productId);
-                    console.warn(`⚠️ 产品 ${productId} 在数据库中没有数据，返回随机初始值 ${result[productId]}`);
+                    // 如果数据库中没有数据，返回初始值2000
+                    result[productId] = getRandomInitialCount(productId); // 返回2000
                 }
             });
             
