@@ -1212,48 +1212,25 @@ async function updateHeartCount(productIndex, increment) {
                 
                 const result = await response.json();
                 
-                // 如果服务器返回了count值，智能合并服务器值和本地值
+                // 如果服务器返回了count值，确认更新成功
+                // 本地和服务器相互独立：本地显示2000-3000随机初始值+点击次数，服务器从2000+点击次数
+                // 因此不需要同步差值，只需确认点击是否成功
                 if (result.count !== undefined) {
                     const currentLocalCount = heartCounts[productIndex];
                     const serverCount = result.count;
                     
-                    // 智能合并策略：防止连续点击时的回退问题
-                    // 1. 如果服务器值 >= 本地值，说明服务器已处理了我们的更新（可能包含其他用户的更新），使用服务器值
-                    // 2. 如果服务器值 < 本地值，说明本地有更新的点击（快速连续点击），保持本地值并重新发送更新
-                    if (serverCount >= currentLocalCount) {
-                        // 服务器值更新或相同，使用服务器值（可能包含了其他用户的点赞）
-                        updateHeartCountDisplay(productIndex, serverCount);
-                        if (result.success) {
-                            if (serverCount === currentLocalCount) {
-                                console.log(`✅ 产品 ${productId} 爱心数量已保存到服务器: ${serverCount} (本地: ${currentLocalCount})`);
-                            } else {
-                                console.log(`✅ 产品 ${productId} 爱心数量已保存到服务器: ${serverCount} (本地已同步: ${currentLocalCount} -> ${serverCount})`);
-                            }
-                            // 更新成功后，延迟1秒触发一次同步，确保移动端和电脑端实时同步
-                            setTimeout(async () => {
-                                await loadHeartCountsFromServer();
-                            }, 1000);
-                        } else {
-                            console.warn(`⚠️ 产品 ${productId} 更新失败，但使用服务器返回的值: ${serverCount}`);
-                        }
-                        return; // 有count值，退出重试循环
+                    // 本地和服务器相互独立，保持本地值不变
+                    // 服务器返回的值只用于确认更新成功，不影响本地显示
+                    if (result.success) {
+                        console.log(`✅ 产品 ${productId} 爱心数量已保存到服务器: ${serverCount} (本地: ${currentLocalCount}, 服务器独立递增)`);
+                        // 更新成功后，延迟1秒触发一次同步，确保移动端和电脑端实时同步
+                        setTimeout(async () => {
+                            await loadHeartCountsFromServer();
+                        }, 1000);
                     } else {
-                        // 服务器值小于本地值，说明本地有更新的点击，需要重新发送更新
-                        const pendingIncrement = currentLocalCount - serverCount;
-                        if (pendingIncrement > 0) {
-                            console.log(`🔄 产品 ${productId} 本地值(${currentLocalCount}) > 服务器值(${serverCount})，重新发送更新 (+${pendingIncrement})`);
-                            // 重新累积待处理的增量
-                            pendingHeartUpdates[productIndex] = (pendingHeartUpdates[productIndex] || 0) + pendingIncrement;
-                            // 继续重试循环，重新发送更新
-                            retryCount = 0; // 重置重试计数
-                            continue; // 继续while循环，重新发送请求
-                        } else {
-                            // 异常情况，使用服务器值
-                            updateHeartCountDisplay(productIndex, serverCount);
-                            console.warn(`⚠️ 产品 ${productId} 异常情况，使用服务器值: ${serverCount}`);
-                            return;
-                        }
+                        console.warn(`⚠️ 产品 ${productId} 更新失败，服务器返回: ${serverCount}`);
                     }
+                    return; // 有count值，退出重试循环
                 } else if (result.success) {
                     // 成功但没有count值，保持本地更新
                     console.log(`✅ 产品 ${productId} 更新成功（使用本地值）`);
@@ -1381,15 +1358,15 @@ async function loadHeartCountsFromServer() {
                 }
                 productImages.forEach((item, index) => {
                     const productId = item.id;
-                    if (result.heartCounts[productId] !== undefined) {
-                        heartCounts[index] = result.heartCounts[productId];
-                        const countDisplay = document.querySelector(`.heart-count[data-product-index="${index}"]`);
-                        if (countDisplay) {
-                            countDisplay.textContent = formatNumber(heartCounts[index]);
-                        }
-                    } else if (heartCounts[index] === undefined) {
-                        const productId = item.id;
+                    // 本地和服务器相互独立，保持本地值不变
+                    if (heartCounts[index] === undefined) {
+                        // 如果本地还没有值，使用随机初始值
                         heartCounts[index] = getRandomInitialCount(productId);
+                    }
+                    // 更新显示（始终显示本地值）
+                    const countDisplay = document.querySelector(`.heart-count[data-product-index="${index}"]`);
+                    if (countDisplay) {
+                        countDisplay.textContent = formatNumber(heartCounts[index]);
                     }
                 });
             } else {
