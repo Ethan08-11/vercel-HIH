@@ -1,7 +1,9 @@
 const { MongoClient } = require('mongodb');
 
 // MongoDB 连接配置
-const MONGODB_URI = process.env.MONGODB_URI || '';
+// 清理连接字符串：去除首尾空格和换行符
+const rawMongoUri = process.env.MONGODB_URI || '';
+const MONGODB_URI = rawMongoUri.trim().replace(/\n/g, '').replace(/\r/g, '');
 const DB_NAME = process.env.DB_NAME || 'questionnaire';
 const COLLECTION_NAME = 'submissions';
 
@@ -37,6 +39,21 @@ async function connectDB() {
         return null;
     }
 
+    // 验证连接字符串格式
+    const uriPattern = /^mongodb(\+srv)?:\/\//;
+    if (!uriPattern.test(MONGODB_URI)) {
+        console.error('❌ MongoDB 连接字符串格式错误！');
+        console.error('   连接字符串应以 mongodb:// 或 mongodb+srv:// 开头');
+        console.error('   当前连接字符串前20个字符:', MONGODB_URI.substring(0, 20));
+        console.error('   连接字符串长度:', MONGODB_URI.length);
+        console.error('   原始值（前20个字符）:', rawMongoUri.substring(0, 20));
+        console.error('   原始值长度:', rawMongoUri.length);
+        // 尝试显示原始值的十六进制表示（前50个字符）
+        const hexPreview = Buffer.from(rawMongoUri.substring(0, 50)).toString('hex');
+        console.error('   原始值十六进制（前50字符）:', hexPreview);
+        return null;
+    }
+
     try {
         // 检测是否为 Zeabur 环境
         const isZeabur = process.env.ZEABUR || 
@@ -47,8 +64,17 @@ async function connectDB() {
         if (isFirstConnection) {
         console.log('🔌 正在连接MongoDB...');
         console.log('   连接字符串长度:', MONGODB_URI.length);
+        console.log('   连接字符串前缀:', MONGODB_URI.substring(0, 30) + '...');
+        console.log('   连接字符串是否以mongodb开头:', MONGODB_URI.startsWith('mongodb://') || MONGODB_URI.startsWith('mongodb+srv://'));
         console.log('   数据库名称:', DB_NAME);
             console.log('   环境:', isZeabur ? 'Zeabur (生产)' : '本地开发');
+            
+            // 诊断：检查原始值是否有问题
+            if (rawMongoUri !== MONGODB_URI) {
+                console.log('   ⚠️ 检测到连接字符串被清理（原始值包含空格或换行符）');
+                console.log('   原始值长度:', rawMongoUri.length);
+                console.log('   清理后长度:', MONGODB_URI.length);
+            }
         }
         
         // 在 Zeabur 上使用更长的超时时间，因为网络可能较慢
@@ -69,7 +95,15 @@ async function connectDB() {
                 
                 // 创建或重新创建客户端
                 if (attempt === 1 || !client) {
-        client = new MongoClient(MONGODB_URI, {
+                    // 确保连接字符串已清理（再次清理，防止环境变量变化）
+                    const cleanUri = MONGODB_URI.trim().replace(/\n/g, '').replace(/\r/g, '');
+                    
+                    // 验证清理后的连接字符串
+                    if (!uriPattern.test(cleanUri)) {
+                        throw new Error(`连接字符串格式错误：应以 mongodb:// 或 mongodb+srv:// 开头，实际值前20个字符: ${cleanUri.substring(0, 20)}`);
+                    }
+                    
+        client = new MongoClient(cleanUri, {
                         serverSelectionTimeoutMS: timeout, // 服务器选择超时
             connectTimeoutMS: timeout, // 连接超时
                         socketTimeoutMS: isZeabur ? 120000 : 60000, // Zeabur上120秒，本地60秒（处理incomplete read错误）
