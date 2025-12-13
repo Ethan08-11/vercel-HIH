@@ -700,18 +700,25 @@ app.get('/api/heart-counts', async (req, res) => {
                 if (counts[productId] !== undefined && counts[productId] !== null) {
                     // 如果数据库中有数据
                     const dbCount = counts[productId];
-                    // 如果值等于2000，说明是初始值，返回2000
-                    // 如果值大于2000，说明用户已经点击过，返回真实值（如2001, 2002等）
-                    // 如果值小于2000或大于2000但<=2500，可能是旧数据，统一改为2000
+                    // 统一从2000开始递增的逻辑：
+                    // - 如果值等于2000，返回2000（初始值）
+                    // - 如果值在2001-2050之间，很可能是用户点击后的值，返回真实值
+                    // - 如果值在2051-2500之间，很可能是旧随机初始值，返回2000
+                    // - 如果值大于2500，说明用户点击了很多次，返回真实值
+                    // - 如果值小于2000，返回2000（异常值）
                     if (dbCount === 2000) {
                         result[productId] = 2000; // 初始值
-                    } else if (dbCount > 2000 && dbCount <= 2500) {
-                        // 可能是旧数据（2001-2500之间的旧初始值），统一改为2000
+                    } else if (dbCount > 2000 && dbCount <= 2050) {
+                        // 2001-2050之间，很可能是用户点击后的值，返回真实值
+                        result[productId] = dbCount;
+                    } else if (dbCount > 2050 && dbCount <= 2500) {
+                        // 2051-2500之间，很可能是旧随机初始值，返回2000
                         result[productId] = 2000;
                     } else if (dbCount > 2500) {
-                        result[productId] = dbCount; // 保留用户点击后的真实值
+                        // 大于2500，用户点击了很多次，返回真实值
+                        result[productId] = dbCount;
                     } else {
-                        // 小于2000的异常值，统一改为2000
+                        // 小于2000的异常值，返回2000
                         result[productId] = 2000;
                     }
                 } else {
